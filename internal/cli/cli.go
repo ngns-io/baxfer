@@ -4,12 +4,12 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/urfave/cli/v2"
 	"github.com/ngns-io/baxfer/pkg/logger"
 	"github.com/ngns-io/baxfer/pkg/storage"
-	"github.com/urfave/cli/v2"
 )
 
-func NewApp() *cli.App {
+func NewApp(log *logger.Logger) *cli.App {
 	app := &cli.App{
 		Name:      "baxfer",
 		Usage:     "CLI to help manage storage for database backups",
@@ -17,45 +17,16 @@ func NewApp() *cli.App {
 		Compiled:  time.Now(),
 		Authors:   []*cli.Author{{Name: "Doug Evenhouse", Email: "doug@evenhouseconsulting.com"}},
 		Copyright: "(c) 2024 Evenhouse Consulting, Inc.",
-		Flags: []cli.Flag{
-			&cli.StringFlag{
-				Name:    "logfile",
-				Aliases: []string{"l"},
-				Usage:   "Specify the log file location",
-				Value:   "baxfer.log",
-			},
-			&cli.BoolFlag{
-				Name:    "quiet",
-				Aliases: []string{"q"},
-				Usage:   "Enable quiet mode (log only errors)",
-			},
-		},
 		Commands: []*cli.Command{
-			newUploadCommand(),
-			newDownloadCommand(),
-			newPruneCommand(),
-		},
-		Before: func(c *cli.Context) error {
-			// Initialize logger
-			logFile := c.String("logfile")
-			quietMode := c.Bool("quiet")
-			log, err := logger.New(logFile, quietMode)
-			if err != nil {
-				return err
-			}
-			c.App.Metadata["logger"] = log
-			return nil
-		},
-		After: func(c *cli.Context) error {
-			// Close logger
-			log := c.App.Metadata["logger"].(logger.Logger)
-			return log.Close()
+			newUploadCommand(log),
+			newDownloadCommand(log),
+			newPruneCommand(log),
 		},
 	}
 	return app
 }
 
-func newUploadCommand() *cli.Command {
+func newUploadCommand(log *logger.Logger) *cli.Command {
 	return &cli.Command{
 		Name:      "upload",
 		Aliases:   []string{"u"},
@@ -102,17 +73,16 @@ func newUploadCommand() *cli.Command {
 			},
 		},
 		Action: func(c *cli.Context) error {
-			log := c.App.Metadata["logger"].(logger.Logger)
 			uploader, err := getUploader(c)
 			if err != nil {
-				return cli.Exit(err.Error(), 1)
+				return cli.NewExitError(err.Error(), 1)
 			}
 			return storage.Upload(c, uploader, log)
 		},
 	}
 }
 
-func newDownloadCommand() *cli.Command {
+func newDownloadCommand(log *logger.Logger) *cli.Command {
 	return &cli.Command{
 		Name:      "download",
 		Aliases:   []string{"d"},
@@ -144,17 +114,16 @@ func newDownloadCommand() *cli.Command {
 			},
 		},
 		Action: func(c *cli.Context) error {
-			log := c.App.Metadata["logger"].(logger.Logger)
 			uploader, err := getUploader(c)
 			if err != nil {
-				return cli.Exit(err.Error(), 1)
+				return cli.NewExitError(err.Error(), 1)
 			}
 			return storage.Download(c, uploader, log)
 		},
 	}
 }
 
-func newPruneCommand() *cli.Command {
+func newPruneCommand(log *logger.Logger) *cli.Command {
 	return &cli.Command{
 		Name:    "prune",
 		Aliases: []string{"p"},
@@ -191,10 +160,9 @@ func newPruneCommand() *cli.Command {
 			},
 		},
 		Action: func(c *cli.Context) error {
-			log := c.App.Metadata["logger"].(logger.Logger)
 			uploader, err := getUploader(c)
 			if err != nil {
-				return cli.Exit(err.Error(), 1)
+				return cli.NewExitError(err.Error(), 1)
 			}
 			return storage.Prune(c, uploader, log)
 		},

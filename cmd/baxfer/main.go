@@ -1,18 +1,23 @@
 package main
 
 import (
-	"fmt"
 	"os"
 
 	"github.com/ngns-io/baxfer/internal/cli"
+	"github.com/ngns-io/baxfer/pkg/logger"
 )
 
 func main() {
-	app := cli.NewApp()
-
-	err := app.Run(os.Args)
+	log, err := logger.New("baxfer.log")
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		panic(err)
+	}
+	defer log.Close()
+
+	app := cli.NewApp(log)
+	err = app.Run(os.Args)
+	if err != nil {
+		log.Error("Application error", "error", err)
 		os.Exit(1)
 	}
 }
