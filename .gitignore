@@ -8,6 +8,12 @@
 *.so
 *.dylib
 
+# Ignore the binary in the root directory and anywhere else
+/baxfer
+**/baxfer
+# But don't ignore the cmd/baxfer directory
+!cmd/baxfer/
+
 # Test binary, built with `go test -c`
 *.test
 
@@ -21,8 +27,44 @@
 go.work
 go.work.sum
 
+# Test artifacts
+baxfer.log
+*.log
+testdata/
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# IDE and editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
 # env file
 .env
 
-baxfer
-baxfer.log
+# Build output directory
+bin/
+
+# Temporary files
+*.tmp
+*.temp
+
+# Compiled Object files, Static and Dynamic libs (Shared Objects)
+*.o
+*.a
+
+# Debug files
+debug
+
+# Misc
+*.bak
+*.cache
