@@ -5,16 +5,12 @@ package cli
 import (
 	"testing"
 
-	"github.com/ngns-io/baxfer/pkg/logger"
 	"github.com/stretchr/testify/assert"
 	"github.com/urfave/cli/v2"
 )
 
 func TestNewApp(t *testing.T) {
-	log, _ := logger.New("test.log")
-	defer log.Close()
-
-	app := NewApp(log)
+	app := NewApp()
 
 	assert.Equal(t, "baxfer", app.Name)
 	assert.Equal(t, "CLI to help manage storage for database backups", app.Usage)
@@ -28,10 +24,7 @@ func TestNewApp(t *testing.T) {
 }
 
 func TestUploadCommand(t *testing.T) {
-	log, _ := logger.New("test.log")
-	defer log.Close()
-
-	app := NewApp(log)
+	app := NewApp()
 	uploadCmd := findCommand(app.Commands, "upload")
 	assert.NotNil(t, uploadCmd)
 
