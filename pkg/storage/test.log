@@ -1,3 +1,0 @@
-{"level":"info","ts":"2024-10-16T19:02:13.172-0500","caller":"logger/logger.go:36","msg":"File uploaded successfully","file":"/var/folders/zq/6tv491s96ps8gmhbmm20xyb00000gn/T/baxfer-test3265228053/test.bak","key":"test.bak"}
-{"level":"info","ts":"2024-10-16T19:02:24.565-0500","caller":"logger/logger.go:36","msg":"File uploaded successfully","file":"/var/folders/zq/6tv491s96ps8gmhbmm20xyb00000gn/T/baxfer-test3760114674/test.bak","key":"test.bak"}
-{"level":"info","ts":"2024-10-16T19:20:02.633-0500","caller":"logger/logger.go:36","msg":"File uploaded successfully","file":"/var/folders/zq/6tv491s96ps8gmhbmm20xyb00000gn/T/baxfer-test1820648483/test.bak","key":"test.bak"}
