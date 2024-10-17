@@ -2,6 +2,7 @@ package logger
 
 import (
 	"os"
+	"path/filepath"
 
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
@@ -26,7 +27,7 @@ type ZapLogger struct {
 // New creates a new Logger instance
 func New(filename string, quietMode bool) (Logger, error) {
 	config := zap.NewProductionConfig()
-	config.OutputPaths = []string{filename}
+	config.OutputPaths = []string{filepath.Clean(filename)}
 
 	if quietMode {
 		config.Level = zap.NewAtomicLevelAt(zap.ErrorLevel)

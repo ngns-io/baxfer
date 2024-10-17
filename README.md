@@ -14,6 +14,10 @@ Baxfer is a CLI tool designed to help manage storage for database backups. It su
     - [Upload](#upload)
     - [Download](#download)
     - [Prune](#prune)
+  - [CLI Usage Examples](#cli-usage-examples)
+    - [Linux Examples](#linux-examples)
+    - [Windows Examples](#windows-examples)
+    - [General Notes](#general-notes)
   - [Cloudflare R2 Configuration](#cloudflare-r2-configuration)
   - [Building from Source](#building-from-source)
   - [Testing](#testing)
@@ -91,6 +95,63 @@ Options:
 - `--bucket`, `-b`: Storage bucket name
 - `--keyprefix`, `-k`: Prefix for storage keys
 - `--age`, `-a`: Age of files to prune (e.g., 720h for 30 days)
+
+## CLI Usage Examples
+
+### Linux Examples
+
+1. Default log file location:
+   ```
+   baxfer upload --bucket my-bucket /path/to/backups
+   ```
+
+2. Specifying a log file in the current directory:
+   ```
+   baxfer upload --logfile ./baxfer.log --bucket my-bucket /path/to/backups
+   ```
+
+3. Specifying a log file with an absolute path:
+   ```
+   baxfer upload --logfile /var/log/baxfer.log --bucket my-bucket /path/to/backups
+   ```
+
+4. Log file path with spaces:
+   ```
+   baxfer upload --logfile "/var/log/baxfer logs/app.log" --bucket my-bucket /path/to/backups
+   ```
+
+### Windows Examples
+
+1. Default log file location:
+   ```
+   baxfer.exe upload --bucket my-bucket C:\path\to\backups
+   ```
+
+2. Specifying a log file in the current directory:
+   ```
+   baxfer.exe upload --logfile .\baxfer.log --bucket my-bucket C:\path\to\backups
+   ```
+
+3. Specifying a log file with an absolute path:
+   ```
+   baxfer.exe upload --logfile C:\Logs\baxfer.log --bucket my-bucket C:\path\to\backups
+   ```
+
+4. Log file path with spaces:
+   ```
+   baxfer.exe upload --logfile "C:\Program Files\Baxfer\logs\app.log" --bucket my-bucket C:\path\to\backups
+   ```
+
+Note: On Windows, you can use either forward slashes (/) or backslashes (\) as path separators. Windows PowerShell and Command Prompt will understand both.
+
+### General Notes
+
+- Always enclose file paths with spaces in double quotes.
+- For maximum portability, you can use forward slashes (/) as path separators on both Windows and Linux.
+- When using environment variables for paths, remember to quote the variable expansion if it might contain spaces:
+  ```
+  baxfer upload --logfile "$LOG_FILE_PATH" --bucket my-bucket /path/to/backups
+  ```
 
 ## Cloudflare R2 Configuration
 
