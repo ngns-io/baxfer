@@ -7,15 +7,33 @@ import (
 	"go.uber.org/zap/zapcore"
 )
 
-// Logger wraps zap.Logger to provide a simpler interface
-type Logger struct {
-	*zap.Logger
+// Logger is the interface that defines the logging methods
+type Logger interface {
+	Info(msg string, keysAndValues ...interface{})
+	Error(msg string, keysAndValues ...interface{})
+	Warn(msg string, keysAndValues ...interface{})
+	Debug(msg string, keysAndValues ...interface{})
+	Fatal(msg string, keysAndValues ...interface{})
+	Close() error
+}
+
+// ZapLogger is the concrete implementation of the Logger interface
+type ZapLogger struct {
+	*zap.SugaredLogger
+	quietMode bool
 }
 
 // New creates a new Logger instance
-func New(filename string) (*Logger, error) {
+func New(filename string, quietMode bool) (Logger, error) {
 	config := zap.NewProductionConfig()
-	config.OutputPaths = []string{"stdout", filename}
+	config.OutputPaths = []string{filename}
+
+	if quietMode {
+		config.Level = zap.NewAtomicLevelAt(zap.ErrorLevel)
+	} else {
+		config.Level = zap.NewAtomicLevelAt(zap.InfoLevel)
+	}
+
 	config.EncoderConfig.EncodeTime = zapcore.ISO8601TimeEncoder
 
 	logger, err := config.Build()
@@ -23,36 +41,35 @@ func New(filename string) (*Logger, error) {
 		return nil, err
 	}
 
-	return &Logger{logger}, nil
+	return &ZapLogger{
+		SugaredLogger: logger.Sugar(),
+		quietMode:     quietMode,
+	}, nil
 }
 
-// Close flushes any buffered log entries
-func (l *Logger) Close() error {
+func (l *ZapLogger) Close() error {
 	return l.Sync()
 }
 
-// Info logs an info message
-func (l *Logger) Info(msg string, keysAndValues ...interface{}) {
-	l.Logger.Sugar().Infow(msg, keysAndValues...)
+func (l *ZapLogger) Info(msg string, keysAndValues ...interface{}) {
+	if !l.quietMode {
+		l.SugaredLogger.Infow(msg, keysAndValues...)
+	}
 }
 
-// Error logs an error message
-func (l *Logger) Error(msg string, keysAndValues ...interface{}) {
-	l.Logger.Sugar().Errorw(msg, keysAndValues...)
+func (l *ZapLogger) Error(msg string, keysAndValues ...interface{}) {
+	l.SugaredLogger.Errorw(msg, keysAndValues...)
 }
 
-// Warn logs a warning message
-func (l *Logger) Warn(msg string, keysAndValues ...interface{}) {
-	l.Logger.Sugar().Warnw(msg, keysAndValues...)
+func (l *ZapLogger) Warn(msg string, keysAndValues ...interface{}) {
+	l.SugaredLogger.Warnw(msg, keysAndValues...)
 }
 
-// Debug logs a debug message
-func (l *Logger) Debug(msg string, keysAndValues ...interface{}) {
-	l.Logger.Sugar().Debugw(msg, keysAndValues...)
+func (l *ZapLogger) Debug(msg string, keysAndValues ...interface{}) {
+	l.SugaredLogger.Debugw(msg, keysAndValues...)
 }
 
-// Fatal logs a fatal message and then calls os.Exit(1)
-func (l *Logger) Fatal(msg string, keysAndValues ...interface{}) {
-	l.Logger.Sugar().Fatalw(msg, keysAndValues...)
+func (l *ZapLogger) Fatal(msg string, keysAndValues ...interface{}) {
+	l.SugaredLogger.Fatalw(msg, keysAndValues...)
 	os.Exit(1)
 }

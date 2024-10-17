@@ -26,10 +26,10 @@ type Uploader interface {
 	GetFileInfo(ctx context.Context, key string) (*FileInfo, error)
 }
 
-func Upload(c *cli.Context, uploader Uploader, log *logger.Logger) error {
+func Upload(c *cli.Context, uploader Uploader, log logger.Logger) error {
 	rootDir := c.Args().First()
 	if rootDir == "" {
-		return cli.NewExitError("No root directory specified", 1)
+		return cli.Exit("No root directory specified", 1)
 	}
 
 	compress := c.Bool("compress")
@@ -56,7 +56,7 @@ func Upload(c *cli.Context, uploader Uploader, log *logger.Logger) error {
 			key += ".gz"
 		}
 
-		eligible, err := fileUploadEligible(c.Context, uploader, key, info)
+		eligible, err := fileUploadEligible(c.Context, uploader, key, info, log)
 		if err != nil {
 			log.Error("Error checking file eligibility", "file", path, "error", err)
 			return err
@@ -79,7 +79,6 @@ func Upload(c *cli.Context, uploader Uploader, log *logger.Logger) error {
 
 		if compress {
 			// Implement compression logic here
-			// For brevity, we're skipping the actual compression in this example
 			log.Info("Compressing file", "file", path)
 		}
 
@@ -102,38 +101,10 @@ func Upload(c *cli.Context, uploader Uploader, log *logger.Logger) error {
 	})
 }
 
-func fileUploadEligible(ctx context.Context, uploader Uploader, key string, info os.FileInfo) (bool, error) {
-	exists, err := uploader.FileExists(ctx, key)
-	if err != nil {
-		return false, err
-	}
-
-	if !exists {
-		return true, nil
-	}
-
-	remoteInfo, err := uploader.GetFileInfo(ctx, key)
-	if err != nil {
-		return false, err
-	}
-
-	// Compare last modified times
-	if info.ModTime().After(remoteInfo.LastModified) {
-		return true, nil
-	}
-
-	// If the file sizes are different, consider it eligible for upload
-	if info.Size() != remoteInfo.Size {
-		return true, nil
-	}
-
-	return false, nil
-}
-
-func Download(c *cli.Context, uploader Uploader, log *logger.Logger) error {
+func Download(c *cli.Context, uploader Uploader, log logger.Logger) error {
 	key := c.Args().First()
 	if key == "" {
-		return cli.NewExitError("No key specified", 1)
+		return cli.Exit("No key specified", 1)
 	}
 
 	outFile := filepath.Base(key)
@@ -143,19 +114,25 @@ func Download(c *cli.Context, uploader Uploader, log *logger.Logger) error {
 
 	file, err := os.Create(outFile)
 	if err != nil {
+		log.Error("Failed to create output file", "file", outFile, "error", err)
 		return err
 	}
 	defer file.Close()
 
-	bar := progressbar.DefaultBytes(
-		-1,
-		"Downloading "+filepath.Base(key),
-	)
+	nonInteractive := c.Bool("non-interactive")
+	var writer io.Writer = file
 
-	writer := io.MultiWriter(file, bar)
+	if !nonInteractive {
+		bar := progressbar.DefaultBytes(
+			-1,
+			"Downloading "+filepath.Base(key),
+		)
+		writer = io.MultiWriter(file, bar)
+	}
 
-	err = uploader.Download(context.Background(), key, writer)
+	err = uploader.Download(c.Context, key, writer)
 	if err != nil {
+		log.Error("Failed to download file", "key", key, "error", err)
 		return err
 	}
 
@@ -163,32 +140,30 @@ func Download(c *cli.Context, uploader Uploader, log *logger.Logger) error {
 	return nil
 }
 
-func Prune(c *cli.Context, uploader Uploader, log *logger.Logger) error {
+func Prune(c *cli.Context, uploader Uploader, log logger.Logger) error {
 	prefix := c.String("keyprefix")
 	age := c.Duration("age")
 	if age == 0 {
-		return cli.NewExitError("No age specified for pruning", 1)
+		return cli.Exit("No age specified for pruning", 1)
 	}
 
 	cutoff := time.Now().Add(-age)
 
-	files, err := uploader.List(context.Background(), prefix)
+	files, err := uploader.List(c.Context, prefix)
 	if err != nil {
+		log.Error("Failed to list files", "error", err)
 		return err
 	}
 
 	for _, key := range files {
-		// This is a simplification. In a real-world scenario, you'd want to check the last modified time of each file.
-		// The exact implementation depends on the metadata available from your storage provider.
-		// For this example, we're just using the key (which might contain a timestamp) for demonstration.
-		fileTime, err := time.Parse("2006-01-02-15-04-05", filepath.Base(key))
+		info, err := uploader.GetFileInfo(c.Context, key)
 		if err != nil {
-			log.Warn("Unable to parse time from key, skipping", "key", key)
+			log.Error("Failed to get file info", "key", key, "error", err)
 			continue
 		}
 
-		if fileTime.Before(cutoff) {
-			err = uploader.Delete(context.Background(), key)
+		if info.LastModified.Before(cutoff) {
+			err = uploader.Delete(c.Context, key)
 			if err != nil {
 				log.Error("Failed to delete file", "key", key, "error", err)
 			} else {
@@ -198,4 +173,34 @@ func Prune(c *cli.Context, uploader Uploader, log *logger.Logger) error {
 	}
 
 	return nil
+}
+
+func fileUploadEligible(ctx context.Context, uploader Uploader, key string, info os.FileInfo, log logger.Logger) (bool, error) {
+	exists, err := uploader.FileExists(ctx, key)
+	if err != nil {
+		log.Error("Error checking if file exists", "key", key, "error", err)
+		return false, err
+	}
+
+	if !exists {
+		return true, nil
+	}
+
+	remoteInfo, err := uploader.GetFileInfo(ctx, key)
+	if err != nil {
+		log.Error("Error getting remote file info", "key", key, "error", err)
+		return false, err
+	}
+
+	if info.ModTime().After(remoteInfo.LastModified) {
+		log.Info("Local file is newer", "key", key)
+		return true, nil
+	}
+
+	if info.Size() != remoteInfo.Size {
+		log.Info("File sizes differ", "key", key, "local_size", info.Size(), "remote_size", remoteInfo.Size)
+		return true, nil
+	}
+
+	return false, nil
 }
