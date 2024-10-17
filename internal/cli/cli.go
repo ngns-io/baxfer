@@ -24,6 +24,31 @@ func NewApp() *cli.App {
 				Usage:   "Specify the log file location",
 				Value:   "baxfer.log",
 			},
+			&cli.IntFlag{
+				Name:  "log-max-size",
+				Usage: "Maximum size of log file before rotation (in megabytes)",
+				Value: 10,
+			},
+			&cli.IntFlag{
+				Name:  "log-max-age",
+				Usage: "Maximum number of days to retain old log files",
+				Value: 30,
+			},
+			&cli.IntFlag{
+				Name:  "log-max-backups",
+				Usage: "Maximum number of old log files to retain",
+				Value: 5,
+			},
+			&cli.BoolFlag{
+				Name:  "log-compress",
+				Usage: "Compress rotated log files",
+				Value: true,
+			},
+			&cli.BoolFlag{
+				Name:  "log-clear",
+				Usage: "Clear log file on start",
+				Value: false,
+			},
 			&cli.BoolFlag{
 				Name:    "quiet",
 				Aliases: []string{"q"},
@@ -37,9 +62,15 @@ func NewApp() *cli.App {
 		},
 		Before: func(c *cli.Context) error {
 			// Initialize logger
-			logFile := c.String("logfile")
-			quietMode := c.Bool("quiet")
-			log, err := logger.New(logFile, quietMode)
+			logConfig := logger.LogConfig{
+				Filename:     c.String("logfile"),
+				MaxSize:      c.Int("log-max-size"),
+				MaxAge:       c.Int("log-max-age"),
+				MaxBackups:   c.Int("log-max-backups"),
+				Compress:     c.Bool("log-compress"),
+				ClearOnStart: c.Bool("log-clear"),
+			}
+			log, err := logger.New(logConfig, c.Bool("quiet"))
 			if err != nil {
 				return err
 			}
@@ -122,7 +153,7 @@ func newDownloadCommand() *cli.Command {
 			&cli.StringFlag{
 				Name:    "provider",
 				Aliases: []string{"p"},
-				Usage:   "Storage provider (s3 or b2)",
+				Usage:   "Storage provider (s3, b2, or r2)",
 				Value:   "s3",
 			},
 			&cli.StringFlag{
@@ -163,7 +194,7 @@ func newPruneCommand() *cli.Command {
 			&cli.StringFlag{
 				Name:    "provider",
 				Aliases: []string{"p"},
-				Usage:   "Storage provider (s3 or b2)",
+				Usage:   "Storage provider (s3, b2, or r2)",
 				Value:   "s3",
 			},
 			&cli.StringFlag{

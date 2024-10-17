@@ -18,6 +18,7 @@ Baxfer is a CLI tool designed to help manage storage for database backups. It su
     - [Linux Examples](#linux-examples)
     - [Windows Examples](#windows-examples)
     - [General Notes](#general-notes)
+  - [Logging Usage](#logging-usage)
   - [Cloudflare R2 Configuration](#cloudflare-r2-configuration)
   - [Building from Source](#building-from-source)
   - [Testing](#testing)
@@ -142,7 +143,7 @@ Options:
    baxfer.exe upload --logfile "C:\Program Files\Baxfer\logs\app.log" --bucket my-bucket C:\path\to\backups
    ```
 
-Note: On Windows, you can use either forward slashes (/) or backslashes (\) as path separators. Windows PowerShell and Command Prompt will understand both.
+Note: On Windows, you can use either forward slashes (/) or backslashes (\\) as path separators. Windows PowerShell and Command Prompt will understand both.
 
 ### General Notes
 
@@ -152,6 +153,36 @@ Note: On Windows, you can use either forward slashes (/) or backslashes (\) as p
   ```
   baxfer upload --logfile "$LOG_FILE_PATH" --bucket my-bucket /path/to/backups
   ```
+
+## Logging Usage
+
+Baxfer now includes advanced logging options to help manage log file growth:
+
+```
+baxfer [global options] command [command options] [arguments...]
+```
+
+Global Options:
+  --logfile value, -l value       Log file path (default: "baxfer.log")
+  --log-max-size value            Maximum size of log file before rotation (in megabytes) (default: 10)
+  --log-max-age value             Maximum number of days to retain old log files (default: 30)
+  --log-max-backups value         Maximum number of old log files to retain (default: 5)
+  --log-compress                  Compress rotated log files (default: true)
+  --log-clear                     Clear log file on start (default: false)
+  --quiet, -q                     Quiet mode (log only errors)
+
+Example usage with logging options:
+
+```
+baxfer --logfile /var/log/baxfer.log --log-max-size 20 --log-max-age 7 --log-clear upload --bucket my-bucket /path/to/backups
+```
+
+This command will:
+- Use `/var/log/baxfer.log` as the log file
+- Rotate the log file when it reaches 20MB
+- Keep rotated log files for 7 days
+- Clear the log file before starting
+- Compress old log files (default behavior)
 
 ## Cloudflare R2 Configuration
 

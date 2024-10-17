@@ -1,12 +1,23 @@
 package logger
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
+	"gopkg.in/natefinch/lumberjack.v2"
 )
+
+type LogConfig struct {
+	Filename     string
+	MaxSize      int // megabytes
+	MaxAge       int // days
+	MaxBackups   int
+	Compress     bool
+	ClearOnStart bool
+}
 
 // Logger is the interface that defines the logging methods
 type Logger interface {
@@ -25,27 +36,44 @@ type ZapLogger struct {
 }
 
 // New creates a new Logger instance
-func New(filename string, quietMode bool) (Logger, error) {
-	config := zap.NewProductionConfig()
-	config.OutputPaths = []string{filepath.Clean(filename)}
-
-	if quietMode {
-		config.Level = zap.NewAtomicLevelAt(zap.ErrorLevel)
-	} else {
-		config.Level = zap.NewAtomicLevelAt(zap.InfoLevel)
+func New(config LogConfig, quietMode bool) (Logger, error) {
+	if config.ClearOnStart {
+		err := os.Remove(config.Filename)
+		if err != nil && !os.IsNotExist(err) {
+			return nil, fmt.Errorf("failed to clear log file: %w", err)
+		}
 	}
 
-	config.EncoderConfig.EncodeTime = zapcore.ISO8601TimeEncoder
+	w := zapcore.AddSync(&lumberjack.Logger{
+		Filename:   filepath.Clean(config.Filename),
+		MaxSize:    config.MaxSize,
+		MaxBackups: config.MaxBackups,
+		MaxAge:     config.MaxAge,
+		Compress:   config.Compress,
+	})
 
-	logger, err := config.Build()
-	if err != nil {
-		return nil, err
-	}
+	encoderConfig := zap.NewProductionEncoderConfig()
+	encoderConfig.EncodeTime = zapcore.ISO8601TimeEncoder
+
+	core := zapcore.NewCore(
+		zapcore.NewJSONEncoder(encoderConfig),
+		w,
+		getLogLevel(quietMode),
+	)
+
+	logger := zap.New(core)
 
 	return &ZapLogger{
 		SugaredLogger: logger.Sugar(),
 		quietMode:     quietMode,
 	}, nil
+}
+
+func getLogLevel(quietMode bool) zapcore.Level {
+	if quietMode {
+		return zapcore.ErrorLevel
+	}
+	return zapcore.InfoLevel
 }
 
 func (l *ZapLogger) Close() error {
