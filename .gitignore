@@ -29,7 +29,7 @@ go.work.sum
 
 # Test artifacts
 baxfer.log
-*.log
+**/*.log
 testdata/
 
 # OS generated files

@@ -69,7 +69,7 @@ func newUploadCommand() *cli.Command {
 			&cli.StringFlag{
 				Name:    "provider",
 				Aliases: []string{"p"},
-				Usage:   "Storage provider (s3 or b2)",
+				Usage:   "Storage provider (s3, b2, or r2)",
 				Value:   "s3",
 			},
 			&cli.StringFlag{
@@ -211,6 +211,8 @@ func getUploader(c *cli.Context) (storage.Uploader, error) {
 		return storage.NewS3Uploader(region, bucket)
 	case "b2":
 		return storage.NewB2Uploader(bucket)
+	case "r2":
+		return storage.NewR2Uploader(bucket)
 	default:
 		return nil, fmt.Errorf("unsupported storage provider: %s", provider)
 	}

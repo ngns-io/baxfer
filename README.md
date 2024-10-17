@@ -14,6 +14,7 @@ Baxfer is a CLI tool designed to help manage storage for database backups. It su
     - [Upload](#upload)
     - [Download](#download)
     - [Prune](#prune)
+  - [Cloudflare R2 Configuration](#cloudflare-r2-configuration)
   - [Building from Source](#building-from-source)
   - [Testing](#testing)
   - [Contributing](#contributing)
@@ -54,7 +55,7 @@ baxfer upload [options] <root directory>
 ```
 
 Options:
-- `--provider`, `-p`: Storage provider (s3 or b2) [default: "s3"]
+- `--provider`, `-p`: Storage provider (s3, b2, or r2) [default: "s3"]
 - `--region`, `-r`: AWS region (for S3 only) [default: "us-east-1"]
 - `--bucket`, `-b`: Storage bucket name
 - `--keyprefix`, `-k`: Prefix for storage keys
@@ -71,7 +72,7 @@ baxfer download [options] <key>
 ```
 
 Options:
-- `--provider`, `-p`: Storage provider (s3 or b2) [default: "s3"]
+- `--provider`, `-p`: Storage provider (s3, b2, or r2) [default: "s3"]
 - `--region`, `-r`: AWS region (for S3 only) [default: "us-east-1"]
 - `--bucket`, `-b`: Storage bucket name
 - `--output`, `-o`: Output file name
@@ -85,11 +86,29 @@ baxfer prune [options]
 ```
 
 Options:
-- `--provider`, `-p`: Storage provider (s3 or b2) [default: "s3"]
+- `--provider`, `-p`: Storage provider (s3, b2, or r2) [default: "s3"]
 - `--region`, `-r`: AWS region (for S3 only) [default: "us-east-1"]
 - `--bucket`, `-b`: Storage bucket name
 - `--keyprefix`, `-k`: Prefix for storage keys
 - `--age`, `-a`: Age of files to prune (e.g., 720h for 30 days)
+
+## Cloudflare R2 Configuration
+
+To use Cloudflare R2 as your storage provider, you need to set up the following environment variables:
+
+- `CF_ACCOUNT_ID`: Your Cloudflare account ID
+- `CF_ACCESS_KEY_ID`: Your R2 access key ID
+- `CF_ACCESS_KEY_SECRET`: Your R2 access key secret
+
+Example usage:
+
+```
+export CF_ACCOUNT_ID=your_account_id
+export CF_ACCESS_KEY_ID=your_access_key_id
+export CF_ACCESS_KEY_SECRET=your_access_key_secret
+
+baxfer upload --provider r2 --bucket your-bucket-name /path/to/backups
+```
 
 ## Building from Source
 
