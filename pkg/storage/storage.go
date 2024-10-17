@@ -5,6 +5,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/ngns-io/baxfer/pkg/logger"
@@ -24,6 +25,25 @@ type Uploader interface {
 	Delete(ctx context.Context, key string) error
 	FileExists(ctx context.Context, key string) (bool, error)
 	GetFileInfo(ctx context.Context, key string) (*FileInfo, error)
+}
+
+func constructKey(rootDir, keyPrefix, path string) (string, error) {
+	// Get the relative path
+	relPath, err := filepath.Rel(rootDir, path)
+	if err != nil {
+		return "", err
+	}
+
+	// Remove volume name if present (for Windows compatibility)
+	relPath = relPath[len(filepath.VolumeName(relPath)):]
+
+	// Convert to forward slashes
+	relPath = filepath.ToSlash(relPath)
+
+	// Combine with key prefix
+	key := strings.TrimPrefix(filepath.ToSlash(filepath.Join(keyPrefix, relPath)), "/")
+
+	return key, nil
 }
 
 func Upload(c *cli.Context, uploader Uploader, log logger.Logger) error {
@@ -46,12 +66,12 @@ func Upload(c *cli.Context, uploader Uploader, log logger.Logger) error {
 			return nil
 		}
 
-		relPath, err := filepath.Rel(rootDir, path)
+		key, err := constructKey(rootDir, keyPrefix, path)
 		if err != nil {
+			log.Error("Error constructing key", "path", path, "error", err)
 			return err
 		}
 
-		key := filepath.Join(keyPrefix, relPath)
 		if compress {
 			key += ".gz"
 		}

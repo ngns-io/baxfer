@@ -108,17 +108,17 @@ Options:
 
 2. Specifying a log file in the current directory:
    ```
-   baxfer upload --logfile ./baxfer.log --bucket my-bucket /path/to/backups
+   baxfer --logfile ./baxfer.log upload --bucket my-bucket /path/to/backups
    ```
 
 3. Specifying a log file with an absolute path:
    ```
-   baxfer upload --logfile /var/log/baxfer.log --bucket my-bucket /path/to/backups
+   baxfer --logfile /var/log/baxfer.log upload --bucket my-bucket /path/to/backups
    ```
 
 4. Log file path with spaces:
    ```
-   baxfer upload --logfile "/var/log/baxfer logs/app.log" --bucket my-bucket /path/to/backups
+   baxfer --logfile "/var/log/baxfer logs/app.log" upload --bucket my-bucket /path/to/backups
    ```
 
 ### Windows Examples
@@ -130,17 +130,17 @@ Options:
 
 2. Specifying a log file in the current directory:
    ```
-   baxfer.exe upload --logfile .\baxfer.log --bucket my-bucket C:\path\to\backups
+   baxfer.exe --logfile .\baxfer.log upload --bucket my-bucket C:\path\to\backups
    ```
 
 3. Specifying a log file with an absolute path:
    ```
-   baxfer.exe upload --logfile C:\Logs\baxfer.log --bucket my-bucket C:\path\to\backups
+   baxfer.exe --logfile C:\Logs\baxfer.log upload --bucket my-bucket C:\path\to\backups
    ```
 
 4. Log file path with spaces:
    ```
-   baxfer.exe upload --logfile "C:\Program Files\Baxfer\logs\app.log" --bucket my-bucket C:\path\to\backups
+   baxfer.exe --logfile "C:\Program Files\Baxfer\logs\app.log" upload --bucket my-bucket C:\path\to\backups
    ```
 
 Note: On Windows, you can use either forward slashes (/) or backslashes (\\) as path separators. Windows PowerShell and Command Prompt will understand both.
@@ -151,7 +151,7 @@ Note: On Windows, you can use either forward slashes (/) or backslashes (\\) as 
 - For maximum portability, you can use forward slashes (/) as path separators on both Windows and Linux.
 - When using environment variables for paths, remember to quote the variable expansion if it might contain spaces:
   ```
-  baxfer upload --logfile "$LOG_FILE_PATH" --bucket my-bucket /path/to/backups
+  baxfer --logfile "$LOG_FILE_PATH" upload --bucket my-bucket /path/to/backups
   ```
 
 ## Logging Usage
