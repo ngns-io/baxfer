@@ -19,6 +19,9 @@ Baxfer is a CLI tool designed to help manage storage for database backups. It su
     - [Windows Examples](#windows-examples)
     - [General Notes](#general-notes)
   - [Logging Usage](#logging-usage)
+  - [Amazon S3 Configuration](#amazon-s3-configuration)
+    - [Running baxfer as a Background Process](#running-baxfer-as-a-background-process)
+  - [Backblaze B2 Configuration](#backblaze-b2-configuration)
   - [Cloudflare R2 Configuration](#cloudflare-r2-configuration)
   - [Building from Source](#building-from-source)
   - [Testing](#testing)
@@ -183,6 +186,108 @@ This command will:
 - Keep rotated log files for 7 days
 - Clear the log file before starting
 - Compress old log files (default behavior)
+
+## Amazon S3 Configuration
+
+To use Amazon S3 as your storage provider with baxfer, you need to set up the following environment variables:
+
+- `AWS_ACCESS_KEY_ID`: Your AWS access key ID
+- `AWS_SECRET_ACCESS_KEY`: Your AWS secret access key
+- `AWS_REGION`: The AWS region where your S3 bucket is located (e.g., us-east-1)
+
+You can obtain these credentials by following these steps:
+
+1. Log in to your AWS Management Console.
+2. Go to the IAM (Identity and Access Management) dashboard.
+3. Create a new IAM user or select an existing one.
+4. Attach the `AmazonS3FullAccess` policy to the user (or a more restrictive custom policy if desired).
+5. Generate new access keys for the user and securely store the Access Key ID and Secret Access Key.
+
+Example usage:
+
+```bash
+export AWS_ACCESS_KEY_ID=your_access_key_id
+export AWS_SECRET_ACCESS_KEY=your_secret_access_key
+export AWS_REGION=your_s3_bucket_region
+
+baxfer --non-interactive --logfile /path/to/baxfer.log upload --provider s3 --bucket your-s3-bucket-name /path/to/backups
+```
+
+Note: Ensure your S3 bucket is created before running baxfer. You can create a bucket through the AWS S3 web interface or using the AWS CLI.
+
+### Running baxfer as a Background Process
+
+To run baxfer as a background process, you can use task scheduling tools like Windows Task Scheduler. Here's an example of how to set it up:
+
+1. Create a batch file (e.g., `run_baxfer.cmd`) with the following content:
+
+```batch
+@echo off
+setlocal
+
+set AWS_ACCESS_KEY_ID=your_access_key_id
+set AWS_SECRET_ACCESS_KEY=your_secret_access_key
+set AWS_REGION=your_s3_bucket_region
+
+C:\path\to\baxfer.exe --non-interactive --logfile C:\path\to\baxfer.log upload --provider s3 --bucket your-s3-bucket-name C:\path\to\backups
+```
+
+2. Create a PowerShell script (e.g., `run_baxfer.ps1`) for more advanced logging:
+
+```powershell
+$env:AWS_ACCESS_KEY_ID = "your_access_key_id"
+$env:AWS_SECRET_ACCESS_KEY = "your_secret_access_key"
+$env:AWS_REGION = "your_s3_bucket_region"
+
+$logFile = "C:\path\to\baxfer.log"
+$timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
+
+try {
+    $output = & C:\path\to\baxfer.exe --non-interactive --logfile $logFile upload --provider s3 --bucket your-s3-bucket-name C:\path\to\backups
+    Add-Content $logFile "$timestamp - Baxfer executed successfully"
+} catch {
+    Add-Content $logFile "$timestamp - Error: $_"
+}
+```
+
+3. Set up a Windows Task Scheduler task:
+   - Open Task Scheduler and create a new task.
+   - Set the trigger to run on your desired schedule.
+   - For the action, choose "Start a program" and point it to either `run_baxfer.cmd` or `powershell.exe` with the argument `-File "C:\path\to\run_baxfer.ps1"`.
+
+Remember to use the `--non-interactive` flag when running baxfer as a background process to prevent it from waiting for user input.
+
+Always keep your AWS credentials secure and never commit them to version control. Using environment variables or secure script files (with restricted access) is a safe way to provide these credentials to baxfer.
+
+## Backblaze B2 Configuration
+
+To use Backblaze B2 as your storage provider with baxfer, you need to set up the following environment variables:
+
+- `B2_KEY_ID`: Your Backblaze B2 application key ID
+- `B2_APP_KEY`: Your Backblaze B2 application key
+
+You can obtain these credentials by following these steps:
+
+1. Log in to your Backblaze account.
+2. Go to the "App Keys" section in your account settings.
+3. Click "Add a New Application Key".
+4. Set the permissions for the key (ensure it has read and write access to the bucket you'll be using).
+5. Copy the "applicationKeyId" and "applicationKey" values.
+
+Example usage:
+
+```bash
+export B2_KEY_ID=your_b2_key_id
+export B2_APP_KEY=your_b2_app_key
+
+baxfer upload --provider b2 --bucket your-b2-bucket-name /path/to/backups
+```
+
+Note: Make sure your B2 bucket is created before running baxfer. You can create a bucket through the Backblaze B2 web interface or using their CLI tool.
+
+When using Backblaze B2, baxfer will automatically use the correct endpoint for B2's S3-compatible API. You don't need to specify a region for B2 buckets.
+
+Remember to keep your B2 credentials secure and never commit them to version control. Using environment variables as shown above is a safe way to provide these credentials to baxfer.
 
 ## Cloudflare R2 Configuration
 
