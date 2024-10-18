@@ -1,10 +1,17 @@
 # Baxfer
 
-Baxfer is a CLI tool designed to help manage storage for database backups. It supports uploading, downloading, and pruning backup files from cloud storage providers such as Amazon S3 and Backblaze B2.
+Baxfer is a CLI tool designed to help manage storage for files in a folder hierarchy such as database backup files. It supports uploading, downloading, and pruning files from cloud storage providers such as Amazon S3, Backblaze B2, and Cloudflare R2.
+
+# ⚠️ Important Notice
+
+This project is currently in development and is not considered production-ready. While effort has been made to ensure reliability, the software should be thoroughly tested in your specific environment before any production use. Use at your own risk.
+
+No warranty is provided, either expressed or implied. The authors and contributors are not liable for any data loss or other damages arising from the use of this software.
 
 ## Table of Contents
 
 - [Baxfer](#baxfer)
+- [⚠️ Important Notice](#️-important-notice)
   - [Table of Contents](#table-of-contents)
   - [Features](#features)
   - [Installation](#installation)
@@ -20,9 +27,11 @@ Baxfer is a CLI tool designed to help manage storage for database backups. It su
     - [General Notes](#general-notes)
   - [Logging Usage](#logging-usage)
   - [Amazon S3 Configuration](#amazon-s3-configuration)
-    - [Running baxfer as a Background Process](#running-baxfer-as-a-background-process)
   - [Backblaze B2 Configuration](#backblaze-b2-configuration)
   - [Cloudflare R2 Configuration](#cloudflare-r2-configuration)
+  - [Running baxfer as a Background Process](#running-baxfer-as-a-background-process)
+    - [Windows Task Scheduler Setup](#windows-task-scheduler-setup)
+    - [Linux Cron Setup](#linux-cron-setup)
   - [Building from Source](#building-from-source)
   - [Testing](#testing)
   - [Contributing](#contributing)
@@ -30,7 +39,7 @@ Baxfer is a CLI tool designed to help manage storage for database backups. It su
 
 ## Features
 
-- Upload backup files to Amazon S3 or Backblaze B2
+- Upload backup files to Amazon S3, Backblaze B2, or Cloudflare R2
 - Download backup files from cloud storage
 - Prune old backup files from cloud storage
 - Supports both interactive and non-interactive modes
@@ -225,50 +234,6 @@ export AWS_REGION=us-west-2
 baxfer upload --provider s3 --bucket your-s3-bucket-name /path/to/backups
 ```
 
-### Running baxfer as a Background Process
-
-To run baxfer as a background process, you can use task scheduling tools like Windows Task Scheduler. Here's an example of how to set it up:
-
-1. Create a batch file (e.g., `run_baxfer.cmd`) with the following content:
-
-```batch
-@echo off
-setlocal
-
-set AWS_ACCESS_KEY_ID=your_access_key_id
-set AWS_SECRET_ACCESS_KEY=your_secret_access_key
-set AWS_REGION=your_s3_bucket_region
-
-C:\path\to\baxfer.exe --non-interactive --logfile C:\path\to\baxfer.log upload --provider s3 --bucket your-s3-bucket-name C:\path\to\backups
-```
-
-2. Create a PowerShell script (e.g., `run_baxfer.ps1`) for more advanced logging:
-
-```powershell
-$env:AWS_ACCESS_KEY_ID = "your_access_key_id"
-$env:AWS_SECRET_ACCESS_KEY = "your_secret_access_key"
-$env:AWS_REGION = "your_s3_bucket_region"
-
-$logFile = "C:\path\to\baxfer.log"
-$timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
-
-try {
-    $output = & C:\path\to\baxfer.exe --non-interactive --logfile $logFile upload --provider s3 --bucket your-s3-bucket-name C:\path\to\backups
-    Add-Content $logFile "$timestamp - Baxfer executed successfully"
-} catch {
-    Add-Content $logFile "$timestamp - Error: $_"
-}
-```
-
-3. Set up a Windows Task Scheduler task:
-   - Open Task Scheduler and create a new task.
-   - Set the trigger to run on your desired schedule.
-   - For the action, choose "Start a program" and point it to either `run_baxfer.cmd` or `powershell.exe` with the argument `-File "C:\path\to\run_baxfer.ps1"`.
-
-Remember to use the `--non-interactive` flag when running baxfer as a background process to prevent it from waiting for user input.
-
-Always keep your AWS credentials secure and never commit them to version control. Using environment variables or secure script files (with restricted access) is a safe way to provide these credentials to baxfer.
-
 ## Backblaze B2 Configuration
 
 To use Backblaze B2 as your storage provider with baxfer, you need to set up the following environment variables:
@@ -316,6 +281,57 @@ export CF_ACCESS_KEY_SECRET=your_access_key_secret
 
 baxfer upload --provider r2 --bucket your-bucket-name /path/to/backups
 ```
+
+## Running baxfer as a Background Process
+
+Sample scripts for running baxfer as a background process can be found in the `examples` directory of the repository:
+- Windows batch files: `examples/batch/`
+- PowerShell scripts: `examples/powershell/`
+- Linux/Unix shell scripts: `examples/shell/`
+
+These scripts demonstrate how to:
+- Set cloud storage provider credentials
+- Configure logging
+- Set up scheduled backups
+- Handle errors and notifications
+
+### Windows Task Scheduler Setup
+
+1. Copy the appropriate script from the examples directory and modify it for your environment.
+
+2. Set up a Windows Task Scheduler task:
+   - Open Task Scheduler and create a new task
+   - Set the trigger to run on your desired schedule
+   - For the action, choose "Start a program" and point to either:
+     - Your modified .cmd file
+     - `powershell.exe` with argument `-File "path/to/your/script.ps1"`
+
+### Linux Cron Setup
+
+1. Copy and modify an example bash script from `examples/shell/`.
+
+2. Make the script executable:
+   ```bash
+   chmod +x /path/to/your/backup_script.sh
+   ```
+
+3. Open your crontab for editing:
+   ```bash
+   crontab -e
+   ```
+
+4. Add a cron entry (example for daily backup at 2 AM):
+   ```
+   0 2 * * * /path/to/your/backup_script.sh
+   ```
+
+Remember:
+- Use `--non-interactive` flag for background processes
+- Keep credentials secure and never commit them to version control
+- Use environment variables or secure script files with restricted access
+- Test thoroughly in your environment before scheduling
+
+Reference the example scripts for best practices in error handling, logging, and security.
 
 ## Building from Source
 
