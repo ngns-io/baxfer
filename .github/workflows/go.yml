@@ -53,19 +53,12 @@ jobs:
       - name: Build binaries
         run: |
           VERSION=${GITHUB_REF#refs/tags/}
-          gox -osarch="windows/amd64 linux/amd64 darwin/amd64" \
+          gox -osarch="darwin/amd64 linux/amd64 windows/amd64" \
               -ldflags="-X main.version=$VERSION" \
-              -output="bin/baxfer_{{.OS}}_{{.Arch}}{{if eq .OS \"windows\"}}.exe{{end}}" \
+              -output="bin/baxfer_{{.OS}}_{{.Arch}}" \
               ./cmd/baxfer
           echo "Listing contents of bin directory:"
           ls -la bin/
-
-      - name: Build Windows binary
-        env:
-          GOOS: windows
-          GOARCH: amd64
-        run: |
-          go build -o bin/baxfer_windows_amd64.exe ./cmd/baxfer
 
       - name: Create release
         uses: softprops/action-gh-release@v1
