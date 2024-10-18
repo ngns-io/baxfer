@@ -61,10 +61,10 @@ jobs:
       - name: Create release
         uses: softprops/action-gh-release@v1
         with:
-          files:
-            bin/baxfer_windows_amd64.exe
-            bin/baxfer_linux_amd64
+          files: |
             bin/baxfer_darwin_amd64
+            bin/baxfer_linux_amd64
+            bin/baxfer_windows_amd64.exe
           prerelease: ${{ contains(github.ref, '-alpha.') || contains(github.ref, '-beta.') }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
