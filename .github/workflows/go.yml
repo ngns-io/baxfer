@@ -61,7 +61,7 @@ jobs:
       - name: Create release
         uses: softprops/action-gh-release@v1
         with:
-          files: |
+          files:
             bin/baxfer_windows_amd64.exe
             bin/baxfer_linux_amd64
             bin/baxfer_darwin_amd64
