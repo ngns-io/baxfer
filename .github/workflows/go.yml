@@ -55,14 +55,14 @@ jobs:
           VERSION=${GITHUB_REF#refs/tags/}
           gox -osarch="windows/amd64 linux/amd64 darwin/amd64" \
               -ldflags="-X main.version=$VERSION" \
-              -output="bin/baxfer_{{.OS}}_{{.Arch}}" \
+              -output="bin/baxfer_{{.OS}}_{{.Arch}}{{if eq .OS \"windows\"}}.exe{{end}}" \
               ./cmd/baxfer
               
       - name: Create release
         uses: softprops/action-gh-release@v1
         with:
           files: |
-            bin/baxfer_windows_amd64
+            bin/baxfer_windows_amd64.exe
             bin/baxfer_linux_amd64
             bin/baxfer_darwin_amd64
           prerelease: ${{ contains(github.ref, '-alpha.') || contains(github.ref, '-beta.') }}
