@@ -10,11 +10,13 @@ import (
 	"github.com/urfave/cli/v2"
 )
 
+var version = "dev" // Will be overwritten by build flag
+
 func NewApp() *cli.App {
 	app := &cli.App{
 		Name:      "baxfer",
 		Usage:     "CLI to help manage storage for database backups",
-		Version:   "1.0.0",
+		Version:   version,
 		Compiled:  time.Now(),
 		Authors:   []*cli.Author{{Name: "Doug Evenhouse", Email: "doug@evenhouseconsulting.com"}},
 		Copyright: "(c) 2024 Evenhouse Consulting, Inc.",

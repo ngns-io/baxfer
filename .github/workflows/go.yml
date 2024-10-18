@@ -52,7 +52,9 @@ jobs:
         
       - name: Build binaries
         run: |
+          VERSION=${GITHUB_REF#refs/tags/}
           gox -osarch="windows/amd64 linux/amd64 darwin/amd64" \
+              -ldflags="-X main.version=$VERSION" \
               -output="bin/baxfer_{{.OS}}_{{.Arch}}" \
               ./cmd/baxfer
               
@@ -63,5 +65,6 @@ jobs:
             bin/baxfer_windows_amd64
             bin/baxfer_linux_amd64
             bin/baxfer_darwin_amd64
+          prerelease: ${{ contains(github.ref, '-alpha.') || contains(github.ref, '-beta.') }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
