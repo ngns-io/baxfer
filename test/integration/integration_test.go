@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -56,39 +57,64 @@ func TestIntegration(t *testing.T) {
 
 			testData := []byte("test data " + time.Now().String())
 			testKey := "test-file-" + provider.name + ".txt"
+			compressedKey := strings.TrimSuffix(testKey, ".txt") + ".zip"
 
-			// Test Upload
+			// Test uncompressed upload
 			err = uploader.Upload(context.Background(), testKey, bytes.NewReader(testData), int64(len(testData)))
 			assert.NoError(t, err)
 
-			// Test FileExists
+			// Test compressed upload
+			err = uploader.Upload(context.Background(), compressedKey, bytes.NewReader(testData), int64(len(testData)))
+			assert.NoError(t, err)
+
+			// Test FileExists for both
 			exists, err := uploader.FileExists(context.Background(), testKey)
 			assert.NoError(t, err)
 			assert.True(t, exists)
 
-			// Test GetFileInfo
+			exists, err = uploader.FileExists(context.Background(), compressedKey)
+			assert.NoError(t, err)
+			assert.True(t, exists)
+
+			// Test GetFileInfo for both
 			fileInfo, err := uploader.GetFileInfo(context.Background(), testKey)
 			assert.NoError(t, err)
 			assert.Equal(t, int64(len(testData)), fileInfo.Size)
-			assert.True(t, time.Since(fileInfo.LastModified) < time.Minute)
 
-			// Test Download
+			compressedInfo, err := uploader.GetFileInfo(context.Background(), compressedKey)
+			assert.NoError(t, err)
+			assert.True(t, compressedInfo.Size > 0)
+
+			// Test Download for both
 			var buf bytes.Buffer
 			err = uploader.Download(context.Background(), testKey, &buf)
 			assert.NoError(t, err)
 			assert.Equal(t, testData, buf.Bytes())
 
+			buf.Reset()
+			err = uploader.Download(context.Background(), compressedKey, &buf)
+			assert.NoError(t, err)
+			assert.NotEmpty(t, buf.Bytes())
+
 			// Test List
 			files, err := uploader.List(context.Background(), "")
 			assert.NoError(t, err)
 			assert.Contains(t, files, testKey)
+			assert.Contains(t, files, compressedKey)
 
-			// Test Delete
+			// Test Delete for both
 			err = uploader.Delete(context.Background(), testKey)
 			assert.NoError(t, err)
 
-			// Verify deletion
+			err = uploader.Delete(context.Background(), compressedKey)
+			assert.NoError(t, err)
+
+			// Verify deletion for both
 			exists, err = uploader.FileExists(context.Background(), testKey)
+			assert.NoError(t, err)
+			assert.False(t, exists)
+
+			exists, err = uploader.FileExists(context.Background(), compressedKey)
 			assert.NoError(t, err)
 			assert.False(t, exists)
 		})

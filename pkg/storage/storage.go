@@ -1,6 +1,7 @@
 package storage
 
 import (
+	"archive/zip"
 	"context"
 	"io"
 	"os"
@@ -46,6 +47,63 @@ func constructKey(rootDir, keyPrefix, path string) (string, error) {
 	return key, nil
 }
 
+func compressFile(sourcePath string, log logger.Logger) (string, int64, error) {
+	zipPath := sourcePath + ".zip"
+	log.Info("Compressing file", "source", sourcePath, "destination", zipPath)
+
+	zipFile, err := os.Create(zipPath)
+	if err != nil {
+		return "", 0, err
+	}
+	defer zipFile.Close()
+
+	zipWriter := zip.NewWriter(zipFile)
+	defer zipWriter.Close()
+
+	sourceFile, err := os.Open(sourcePath)
+	if err != nil {
+		return "", 0, err
+	}
+	defer sourceFile.Close()
+
+	fileInfo, err := sourceFile.Stat()
+	if err != nil {
+		return "", 0, err
+	}
+
+	header, err := zip.FileInfoHeader(fileInfo)
+	if err != nil {
+		return "", 0, err
+	}
+
+	// Ensure Windows compatibility by using forward slashes
+	header.Name = strings.ReplaceAll(filepath.Base(sourcePath), "\\", "/")
+	header.Method = zip.Deflate
+
+	writer, err := zipWriter.CreateHeader(header)
+	if err != nil {
+		return "", 0, err
+	}
+
+	_, err = io.Copy(writer, sourceFile)
+	if err != nil {
+		return "", 0, err
+	}
+
+	err = zipWriter.Close()
+	if err != nil {
+		return "", 0, err
+	}
+
+	compressedInfo, err := os.Stat(zipPath)
+	if err != nil {
+		return "", 0, err
+	}
+
+	log.Info("File compressed successfully", "file", zipPath, "size", compressedInfo.Size())
+	return zipPath, compressedInfo.Size(), nil
+}
+
 func Upload(c *cli.Context, uploader Uploader, log logger.Logger) error {
 	rootDir := c.Args().First()
 	if rootDir == "" {
@@ -66,57 +124,80 @@ func Upload(c *cli.Context, uploader Uploader, log logger.Logger) error {
 			return nil
 		}
 
-		key, err := constructKey(rootDir, keyPrefix, path)
+		originalKey, err := constructKey(rootDir, keyPrefix, path)
 		if err != nil {
 			log.Error("Error constructing key", "path", path, "error", err)
 			return err
 		}
 
+		compressedKey := strings.TrimSuffix(originalKey, filepath.Ext(originalKey)) + ".zip"
+
+		var uploadKey string
+		var uploadPath string
+		var uploadSize int64
+
 		if compress {
-			key += ".gz"
+			uploadKey = compressedKey
+			eligible, err := fileUploadEligible(c.Context, uploader, uploadKey, info, log)
+			if err != nil {
+				log.Error("Error checking file eligibility", "file", path, "error", err)
+				return err
+			}
+
+			if !eligible {
+				log.Info("Skipping file (compressed version already uploaded or not modified)", "file", path)
+				return nil
+			}
+
+			compressedPath, compressedSize, err := compressFile(path, log)
+			if err != nil {
+				log.Error("Failed to compress file", "file", path, "error", err)
+				return err
+			}
+			uploadPath = compressedPath
+			uploadSize = compressedSize
+			defer os.Remove(compressedPath) // Clean up the compressed file after upload
+		} else {
+			uploadKey = originalKey
+			eligible, err := fileUploadEligible(c.Context, uploader, uploadKey, info, log)
+			if err != nil {
+				log.Error("Error checking file eligibility", "file", path, "error", err)
+				return err
+			}
+
+			if !eligible {
+				log.Info("Skipping file (already uploaded or not modified)", "file", path)
+				return nil
+			}
+
+			uploadPath = path
+			uploadSize = info.Size()
 		}
 
-		eligible, err := fileUploadEligible(c.Context, uploader, key, info, log)
+		file, err := os.Open(uploadPath)
 		if err != nil {
-			log.Error("Error checking file eligibility", "file", path, "error", err)
-			return err
-		}
-
-		if !eligible {
-			log.Info("Skipping file (already uploaded or not modified)", "file", path)
-			return nil
-		}
-
-		file, err := os.Open(path)
-		if err != nil {
-			log.Error("Failed to open file", "file", path, "error", err)
+			log.Error("Failed to open file", "file", uploadPath, "error", err)
 			return err
 		}
 		defer file.Close()
 
 		var reader io.Reader = file
-		size := info.Size()
-
-		if compress {
-			// Implement compression logic here
-			log.Info("Compressing file", "file", path)
-		}
 
 		if !nonInteractive {
 			bar := progressbar.DefaultBytes(
-				size,
-				"Uploading "+filepath.Base(path),
+				uploadSize,
+				"Uploading "+filepath.Base(uploadPath),
 			)
 			reader = io.TeeReader(reader, bar)
 		}
 
-		err = uploader.Upload(c.Context, key, reader, size)
+		err = uploader.Upload(c.Context, uploadKey, reader, uploadSize)
 		if err != nil {
-			log.Error("Failed to upload file", "file", path, "error", err)
+			log.Error("Failed to upload file", "file", uploadPath, "error", err)
 			return err
 		}
 
-		log.Info("File uploaded successfully", "file", path, "key", key)
+		log.Info("File uploaded successfully", "file", path, "key", uploadKey)
 		return nil
 	})
 }

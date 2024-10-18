@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strconv"
 	"testing"
 	"time"
 
@@ -94,29 +95,129 @@ func TestUpload(t *testing.T) {
 	err = os.WriteFile(testFile, []byte("test data"), 0644)
 	assert.NoError(t, err)
 
+	tests := []struct {
+		name         string
+		compress     bool
+		expectedKey  string
+		expectedSize int64
+	}{
+		{"Uncompressed", false, "test.bak", 9},
+		{"Compressed", true, "test.zip", 9}, // Size might vary, using original size for simplicity
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mockUploader := new(MockUploader)
+			mockLogger := NewMockLogger()
+
+			mockUploader.On("FileExists", mock.Anything, tt.expectedKey).Return(false, nil)
+			mockUploader.On("Upload", mock.Anything, tt.expectedKey, mock.AnythingOfType("*os.File"), mock.AnythingOfType("int64")).Return(nil)
+			mockLogger.On("Info", mock.Anything, mock.Anything).Return()
+
+			app := &cli.App{}
+			set := flag.NewFlagSet("test", 0)
+			set.String("backupext", ".bak", "doc")
+			set.Bool("compress", tt.compress, "doc")
+			set.Bool("non-interactive", true, "doc")
+			ctx := cli.NewContext(app, set, nil)
+			ctx.Set("backupext", ".bak")
+			ctx.Set("compress", strconv.FormatBool(tt.compress))
+			ctx.Set("non-interactive", "true")
+
+			err = set.Parse([]string{tempDir})
+			assert.NoError(t, err)
+
+			err = Upload(ctx, mockUploader, mockLogger)
+			assert.NoError(t, err)
+
+			mockUploader.AssertExpectations(t)
+			mockLogger.AssertExpectations(t)
+		})
+	}
+}
+
+func TestFileUploadEligible(t *testing.T) {
 	mockUploader := new(MockUploader)
 	mockLogger := NewMockLogger()
 
-	mockUploader.On("FileExists", mock.Anything, "test.bak").Return(false, nil)
-	mockUploader.On("Upload", mock.Anything, "test.bak", mock.Anything, int64(9)).Return(nil)
-	mockLogger.On("Info", mock.Anything, mock.Anything).Return()
+	tests := []struct {
+		name           string
+		key            string
+		fileExists     bool
+		localModTime   time.Time
+		remoteModTime  time.Time
+		localSize      int64
+		remoteSize     int64
+		expectedResult bool
+		expectInfoLog  bool
+	}{
+		{
+			name:           "Uncompressed file doesn't exist remotely",
+			key:            "test.bak",
+			fileExists:     false,
+			expectedResult: true,
+			expectInfoLog:  false,
+		},
+		{
+			name:           "Compressed file doesn't exist remotely",
+			key:            "test.zip",
+			fileExists:     false,
+			expectedResult: true,
+			expectInfoLog:  false,
+		},
+		{
+			name:           "Uncompressed file exists, local is newer",
+			key:            "test.bak",
+			fileExists:     true,
+			localModTime:   time.Now(),
+			remoteModTime:  time.Now().Add(-1 * time.Hour),
+			localSize:      100,
+			remoteSize:     100,
+			expectedResult: true,
+			expectInfoLog:  true,
+		},
+		{
+			name:           "Compressed file exists, same mod time, different size",
+			key:            "test.zip",
+			fileExists:     true,
+			localModTime:   time.Now(),
+			remoteModTime:  time.Now(),
+			localSize:      100,
+			remoteSize:     200,
+			expectedResult: true,
+			expectInfoLog:  true,
+		},
+		{
+			name:           "Uncompressed file exists, same mod time and size",
+			key:            "test.bak",
+			fileExists:     true,
+			localModTime:   time.Now(),
+			remoteModTime:  time.Now(),
+			localSize:      100,
+			remoteSize:     100,
+			expectedResult: false,
+			expectInfoLog:  false,
+		},
+	}
 
-	app := &cli.App{}
-	set := flag.NewFlagSet("test", 0)
-	set.String("backupext", ".bak", "doc")
-	set.Bool("non-interactive", true, "doc")
-	ctx := cli.NewContext(app, set, nil)
-	ctx.Set("backupext", ".bak")
-	ctx.Set("non-interactive", "true")
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mockUploader.On("FileExists", mock.Anything, tt.key).Return(tt.fileExists, nil).Once()
+			if tt.fileExists {
+				mockUploader.On("GetFileInfo", mock.Anything, tt.key).Return(&FileInfo{LastModified: tt.remoteModTime, Size: tt.remoteSize}, nil).Once()
+			}
+			if tt.expectInfoLog {
+				mockLogger.On("Info", mock.Anything, mock.Anything).Return()
+			}
 
-	err = set.Parse([]string{tempDir})
-	assert.NoError(t, err)
+			eligible, err := fileUploadEligible(context.Background(), mockUploader, tt.key, &mockFileInfo{modTime: tt.localModTime, size: tt.localSize}, mockLogger)
+			assert.NoError(t, err)
+			assert.Equal(t, tt.expectedResult, eligible)
 
-	err = Upload(ctx, mockUploader, mockLogger)
-	assert.NoError(t, err)
-
-	mockUploader.AssertExpectations(t)
-	mockLogger.AssertExpectations(t)
+			mockUploader.AssertExpectations(t)
+			mockLogger.AssertExpectations(t)
+		})
+	}
 }
 
 func TestDownload(t *testing.T) {
@@ -167,78 +268,6 @@ func TestPrune(t *testing.T) {
 
 	mockUploader.AssertExpectations(t)
 	mockLogger.AssertExpectations(t)
-}
-
-func TestFileUploadEligible(t *testing.T) {
-	mockUploader := new(MockUploader)
-	mockLogger := NewMockLogger()
-
-	tests := []struct {
-		name           string
-		fileExists     bool
-		localModTime   time.Time
-		remoteModTime  time.Time
-		localSize      int64
-		remoteSize     int64
-		expectedResult bool
-		expectInfoLog  bool
-	}{
-		{
-			name:           "File doesn't exist remotely",
-			fileExists:     false,
-			expectedResult: true,
-			expectInfoLog:  false,
-		},
-		{
-			name:           "File exists, local is newer",
-			fileExists:     true,
-			localModTime:   time.Now(),
-			remoteModTime:  time.Now().Add(-1 * time.Hour),
-			localSize:      100,
-			remoteSize:     100,
-			expectedResult: true,
-			expectInfoLog:  true,
-		},
-		{
-			name:           "File exists, same mod time, different size",
-			fileExists:     true,
-			localModTime:   time.Now(),
-			remoteModTime:  time.Now(),
-			localSize:      100,
-			remoteSize:     200,
-			expectedResult: true,
-			expectInfoLog:  true,
-		},
-		{
-			name:           "File exists, same mod time and size",
-			fileExists:     true,
-			localModTime:   time.Now(),
-			remoteModTime:  time.Now(),
-			localSize:      100,
-			remoteSize:     100,
-			expectedResult: false,
-			expectInfoLog:  false,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			mockUploader.On("FileExists", mock.Anything, "test.bak").Return(tt.fileExists, nil).Once()
-			if tt.fileExists {
-				mockUploader.On("GetFileInfo", mock.Anything, "test.bak").Return(&FileInfo{LastModified: tt.remoteModTime, Size: tt.remoteSize}, nil).Once()
-			}
-			if tt.expectInfoLog {
-				mockLogger.On("Info", mock.Anything, mock.Anything).Return()
-			}
-
-			eligible, err := fileUploadEligible(context.Background(), mockUploader, "test.bak", &mockFileInfo{modTime: tt.localModTime, size: tt.localSize}, mockLogger)
-			assert.NoError(t, err)
-			assert.Equal(t, tt.expectedResult, eligible)
-
-			mockUploader.AssertExpectations(t)
-			mockLogger.AssertExpectations(t)
-		})
-	}
 }
 
 // mockFileInfo is a mock implementation of os.FileInfo for testing

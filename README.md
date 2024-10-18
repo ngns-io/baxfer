@@ -193,7 +193,7 @@ To use Amazon S3 as your storage provider with baxfer, you need to set up the fo
 
 - `AWS_ACCESS_KEY_ID`: Your AWS access key ID
 - `AWS_SECRET_ACCESS_KEY`: Your AWS secret access key
-- `AWS_REGION`: The AWS region where your S3 bucket is located (e.g., us-east-1)
+- `AWS_REGION`: (Optional) The AWS region for your S3 bucket
 
 You can obtain these credentials by following these steps:
 
@@ -203,17 +203,27 @@ You can obtain these credentials by following these steps:
 4. Attach the `AmazonS3FullAccess` policy to the user (or a more restrictive custom policy if desired).
 5. Generate new access keys for the user and securely store the Access Key ID and Secret Access Key.
 
-Example usage:
+Please note that the AWS region can be specified in three ways, in order of precedence:
+1. Command line flag: `--region` or `-r`
+2. Environment variable: `AWS_REGION`
+3. Default value: "us-east-1"
 
+Example usage with region specified by command line flag:
 ```bash
 export AWS_ACCESS_KEY_ID=your_access_key_id
 export AWS_SECRET_ACCESS_KEY=your_secret_access_key
-export AWS_REGION=your_s3_bucket_region
 
-baxfer --non-interactive --logfile /path/to/baxfer.log upload --provider s3 --bucket your-s3-bucket-name /path/to/backups
+baxfer upload --provider s3 --region us-west-2 --bucket your-s3-bucket-name /path/to/backups
 ```
 
-Note: Ensure your S3 bucket is created before running baxfer. You can create a bucket through the AWS S3 web interface or using the AWS CLI.
+Example usage with region specified by environment variable:
+```bash
+export AWS_ACCESS_KEY_ID=your_access_key_id
+export AWS_SECRET_ACCESS_KEY=your_secret_access_key
+export AWS_REGION=us-west-2
+
+baxfer upload --provider s3 --bucket your-s3-bucket-name /path/to/backups
+```
 
 ### Running baxfer as a Background Process
 

@@ -2,6 +2,7 @@ package cli
 
 import (
 	"fmt"
+	"os"
 	"time"
 
 	"github.com/ngns-io/baxfer/pkg/logger"
@@ -107,7 +108,7 @@ func newUploadCommand() *cli.Command {
 				Name:    "region",
 				Aliases: []string{"r"},
 				Usage:   "AWS region (for S3 only)",
-				Value:   "us-east-1",
+				Value:   getDefaultRegion(),
 			},
 			&cli.StringFlag{
 				Name:     "bucket",
@@ -160,7 +161,7 @@ func newDownloadCommand() *cli.Command {
 				Name:    "region",
 				Aliases: []string{"r"},
 				Usage:   "AWS region (for S3 only)",
-				Value:   "us-east-1",
+				Value:   getDefaultRegion(),
 			},
 			&cli.StringFlag{
 				Name:     "bucket",
@@ -201,7 +202,7 @@ func newPruneCommand() *cli.Command {
 				Name:    "region",
 				Aliases: []string{"r"},
 				Usage:   "AWS region (for S3 only)",
-				Value:   "us-east-1",
+				Value:   getDefaultRegion(),
 			},
 			&cli.StringFlag{
 				Name:     "bucket",
@@ -247,4 +248,11 @@ func getUploader(c *cli.Context) (storage.Uploader, error) {
 	default:
 		return nil, fmt.Errorf("unsupported storage provider: %s", provider)
 	}
+}
+
+func getDefaultRegion() string {
+	if region := os.Getenv("AWS_REGION"); region != "" {
+		return region
+	}
+	return "us-east-1"
 }
