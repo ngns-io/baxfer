@@ -3,8 +3,8 @@ module github.com/ngns-io/baxfer
 go 1.23.2
 
 require (
+	github.com/Backblaze/blazer v0.7.1
 	github.com/aws/aws-sdk-go v1.55.5
-	github.com/kurin/blazer v0.5.3
 	github.com/schollz/progressbar/v3 v3.16.1
 	github.com/stretchr/testify v1.9.0
 	github.com/urfave/cli/v2 v2.27.5

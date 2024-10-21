@@ -5,9 +5,8 @@ import (
 	"io"
 	"os"
 	"strings"
-	"time"
 
-	"github.com/kurin/blazer/b2"
+	"github.com/Backblaze/blazer/b2"
 )
 
 type B2Uploader struct {
@@ -89,14 +88,12 @@ func (u *B2Uploader) FileExists(ctx context.Context, key string) (bool, error) {
 	obj := b.Object(key)
 	_, err = obj.Attrs(ctx)
 	if err != nil {
-		// Check if the error message indicates that the file doesn't exist
-		if strings.Contains(strings.ToLower(err.Error()), "not found") {
+		// Check for 404 status in error message
+		if strings.Contains(err.Error(), "404") {
 			return false, nil
 		}
-		// For any other error, return it
 		return false, err
 	}
-	// If there's no error, the file exists
 	return true, nil
 }
 
@@ -113,7 +110,7 @@ func (u *B2Uploader) GetFileInfo(ctx context.Context, key string) (*FileInfo, er
 	}
 
 	return &FileInfo{
-		LastModified: time.Unix(attrs.UploadTimestamp.Unix(), 0), // Convert to time.Time
+		LastModified: attrs.UploadTimestamp,
 		Size:         attrs.Size,
 	}, nil
 }
