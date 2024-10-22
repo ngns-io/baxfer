@@ -45,6 +45,9 @@ func TestIntegration(t *testing.T) {
 		{"B2", func() (storage.Uploader, error) {
 			return storage.NewB2Uploader(os.Getenv("B2_BUCKET"), log)
 		}},
+		{"B2S3", func() (storage.Uploader, error) {
+			return storage.NewB2S3Uploader(os.Getenv("AWS_REGION"), os.Getenv("B2_BUCKET"), log)
+		}},
 		{"R2", func() (storage.Uploader, error) {
 			return storage.NewR2Uploader(os.Getenv("R2_BUCKET"), log)
 		}},

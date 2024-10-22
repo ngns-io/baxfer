@@ -2,7 +2,6 @@ package cli
 
 import (
 	"fmt"
-	"os"
 	"time"
 
 	"github.com/ngns-io/baxfer/pkg/logger"
@@ -103,14 +102,13 @@ func newUploadCommand() *cli.Command {
 			&cli.StringFlag{
 				Name:    "provider",
 				Aliases: []string{"p"},
-				Usage:   "Storage provider (s3, b2, or r2)",
+				Usage:   "Storage provider (s3, b2, b2s3, or r2)",
 				Value:   "s3",
 			},
 			&cli.StringFlag{
 				Name:    "region",
 				Aliases: []string{"r"},
-				Usage:   "AWS region (for S3 only)",
-				Value:   getDefaultRegion(),
+				Usage:   "AWS region (for S3 and b2s3 only)",
 			},
 			&cli.StringFlag{
 				Name:     "bucket",
@@ -156,14 +154,13 @@ func newDownloadCommand() *cli.Command {
 			&cli.StringFlag{
 				Name:    "provider",
 				Aliases: []string{"p"},
-				Usage:   "Storage provider (s3, b2, or r2)",
+				Usage:   "Storage provider (s3, b2, b2s3, or r2)",
 				Value:   "s3",
 			},
 			&cli.StringFlag{
 				Name:    "region",
 				Aliases: []string{"r"},
-				Usage:   "AWS region (for S3 only)",
-				Value:   getDefaultRegion(),
+				Usage:   "AWS region (for S3 and b2s3 only)",
 			},
 			&cli.StringFlag{
 				Name:     "bucket",
@@ -197,14 +194,13 @@ func newPruneCommand() *cli.Command {
 			&cli.StringFlag{
 				Name:    "provider",
 				Aliases: []string{"p"},
-				Usage:   "Storage provider (s3, b2, or r2)",
+				Usage:   "Storage provider (s3, b2, b2s3, or r2)",
 				Value:   "s3",
 			},
 			&cli.StringFlag{
 				Name:    "region",
 				Aliases: []string{"r"},
-				Usage:   "AWS region (for S3 only)",
-				Value:   getDefaultRegion(),
+				Usage:   "AWS region (for S3 and b2s3 only)",
 			},
 			&cli.StringFlag{
 				Name:     "bucket",
@@ -246,16 +242,12 @@ func getUploader(c *cli.Context) (storage.Uploader, error) {
 		return storage.NewS3Uploader(region, bucket, log)
 	case "b2":
 		return storage.NewB2Uploader(bucket, log)
+	case "b2s3":
+		region := c.String("region")
+		return storage.NewB2S3Uploader(region, bucket, log)
 	case "r2":
 		return storage.NewR2Uploader(bucket, log)
 	default:
 		return nil, fmt.Errorf("unsupported storage provider: %s", provider)
 	}
-}
-
-func getDefaultRegion() string {
-	if region := os.Getenv("AWS_REGION"); region != "" {
-		return region
-	}
-	return "us-east-1"
 }

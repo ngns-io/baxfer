@@ -72,8 +72,8 @@ baxfer upload [options] <root directory>
 ```
 
 Options:
-- `--provider`, `-p`: Storage provider (s3, b2, or r2) [default: "s3"]
-- `--region`, `-r`: AWS region (for S3 only) [default: "us-east-1"]
+- `--provider`, `-p`: Storage provider (s3, b2, b2s3, or r2) [default: "s3"]
+- `--region`, `-r`: AWS region (for S3 and b2s3 only) [default: "us-east-1" for s3 and "us-west-002" for b2s3]
 - `--bucket`, `-b`: Storage bucket name
 - `--keyprefix`, `-k`: Prefix for storage keys
 - `--backupext`, `-x`: File extension for backup files [default: ".bak"]
@@ -89,8 +89,8 @@ baxfer download [options] <key>
 ```
 
 Options:
-- `--provider`, `-p`: Storage provider (s3, b2, or r2) [default: "s3"]
-- `--region`, `-r`: AWS region (for S3 only) [default: "us-east-1"]
+- `--provider`, `-p`: Storage provider (s3, b2, b2s3, or r2) [default: "s3"]
+- `--region`, `-r`: AWS region (for S3 only) [default: "us-east-1" for s3 and "us-west-002" for b2s3]
 - `--bucket`, `-b`: Storage bucket name
 - `--output`, `-o`: Output file name
 
@@ -104,7 +104,7 @@ baxfer prune [options]
 
 Options:
 - `--provider`, `-p`: Storage provider (s3, b2, or r2) [default: "s3"]
-- `--region`, `-r`: AWS region (for S3 only) [default: "us-east-1"]
+- `--region`, `-r`: AWS region (for S3 and b2s3 only) [default: "us-east-1" for s3 and "us-west-002" for b2s3]
 - `--bucket`, `-b`: Storage bucket name
 - `--keyprefix`, `-k`: Prefix for storage keys
 - `--age`, `-a`: Age of files to prune (e.g., 720h for 30 days)
@@ -215,7 +215,7 @@ You can obtain these credentials by following these steps:
 Please note that the AWS region can be specified in three ways, in order of precedence:
 1. Command line flag: `--region` or `-r`
 2. Environment variable: `AWS_REGION`
-3. Default value: "us-east-1"
+3. Default value: "us-east-1" for s3 and "us-west-002" for b2s3
 
 Example usage with region specified by command line flag:
 ```bash
@@ -260,7 +260,10 @@ baxfer upload --provider b2 --bucket your-b2-bucket-name /path/to/backups
 
 Note: Make sure your B2 bucket is created before running baxfer. You can create a bucket through the Backblaze B2 web interface or using their CLI tool.
 
-When using Backblaze B2, baxfer will automatically use the correct endpoint for B2's S3-compatible API. You don't need to specify a region for B2 buckets.
+When using Backblaze B2 with the b2s3 provider, baxfer will automatically use the correct endpoint for B2's S3-compatible API. Please note that the region can be specified in three ways, in order of precedence:
+1. Command line flag: `--region` or `-r`
+2. Environment variable: `AWS_REGION`
+3. Default value: "us-west-002" for b2s3
 
 Remember to keep your B2 credentials secure and never commit them to version control. Using environment variables as shown above is a safe way to provide these credentials to baxfer.
 
