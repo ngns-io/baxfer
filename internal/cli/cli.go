@@ -238,15 +238,16 @@ func newPruneCommand() *cli.Command {
 func getUploader(c *cli.Context) (storage.Uploader, error) {
 	provider := c.String("provider")
 	bucket := c.String("bucket")
+	log := c.App.Metadata["logger"].(logger.Logger)
 
 	switch provider {
 	case "s3":
 		region := c.String("region")
-		return storage.NewS3Uploader(region, bucket)
+		return storage.NewS3Uploader(region, bucket, log)
 	case "b2":
-		return storage.NewB2Uploader(bucket)
+		return storage.NewB2Uploader(bucket, log)
 	case "r2":
-		return storage.NewR2Uploader(bucket)
+		return storage.NewR2Uploader(bucket, log)
 	default:
 		return nil, fmt.Errorf("unsupported storage provider: %s", provider)
 	}

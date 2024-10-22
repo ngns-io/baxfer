@@ -3,22 +3,22 @@ package storage
 import (
 	"context"
 	"io"
-	"sync"
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/awserr"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/s3"
 	"github.com/aws/aws-sdk-go/service/s3/s3manager"
+	"github.com/ngns-io/baxfer/pkg/logger"
 )
 
 type S3Uploader struct {
-	uploader *s3manager.Uploader
+	session  *session.Session
 	bucket   string
 	s3Client *s3.S3
 }
 
-func NewS3Uploader(region, bucket string) (*S3Uploader, error) {
+func NewS3Uploader(region, bucket string, log logger.Logger) (*S3Uploader, error) {
 	sess, err := session.NewSession(&aws.Config{
 		Region: aws.String(region),
 	})
@@ -26,15 +26,28 @@ func NewS3Uploader(region, bucket string) (*S3Uploader, error) {
 		return nil, err
 	}
 
-	return &S3Uploader{
-		uploader: s3manager.NewUploader(sess),
+	uploader := &S3Uploader{
+		session:  sess,
 		bucket:   bucket,
 		s3Client: s3.New(sess),
-	}, nil
+	}
+
+	// Log the provider initialization
+	log.Info("Initialized storage provider",
+		"provider", "AWS S3",
+		"region", region,
+		"bucket", bucket)
+
+	return uploader, nil
 }
 
 func (u *S3Uploader) Upload(ctx context.Context, key string, reader io.Reader, size int64) error {
-	_, err := u.uploader.UploadWithContext(ctx, &s3manager.UploadInput{
+	uploader := s3manager.NewUploader(u.session, func(u *s3manager.Uploader) {
+		u.PartSize = 100 * 1024 * 1024 // 100MB parts
+		u.Concurrency = 10             // 10 concurrent uploads
+	})
+
+	_, err := uploader.UploadWithContext(ctx, &s3manager.UploadInput{
 		Bucket: aws.String(u.bucket),
 		Key:    aws.String(key),
 		Body:   reader,
@@ -42,21 +55,13 @@ func (u *S3Uploader) Upload(ctx context.Context, key string, reader io.Reader, s
 	return err
 }
 
-// writerAtWrapper wraps an io.Writer and implements io.WriterAt
-type writerAtWrapper struct {
-	w  io.Writer
-	mu sync.Mutex
-}
-
-func (waw *writerAtWrapper) WriteAt(p []byte, off int64) (n int, err error) {
-	waw.mu.Lock()
-	defer waw.mu.Unlock()
-	return waw.w.Write(p)
-}
-
 func (u *S3Uploader) Download(ctx context.Context, key string, writer io.Writer) error {
-	downloader := s3manager.NewDownloaderWithClient(u.s3Client)
-	writerAt := &writerAtWrapper{w: writer}
+	downloader := s3manager.NewDownloader(u.session, func(d *s3manager.Downloader) {
+		d.PartSize = 100 * 1024 * 1024 // 100MB parts
+		d.Concurrency = 10             // 10 concurrent downloads
+	})
+
+	writerAt := newWriterAtWrapper(writer)
 	_, err := downloader.DownloadWithContext(ctx, writerAt, &s3.GetObjectInput{
 		Bucket: aws.String(u.bucket),
 		Key:    aws.String(key),

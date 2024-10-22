@@ -12,15 +12,16 @@ import (
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/s3"
 	"github.com/aws/aws-sdk-go/service/s3/s3manager"
+	"github.com/ngns-io/baxfer/pkg/logger"
 )
 
 type R2Uploader struct {
-	uploader *s3manager.Uploader
+	session  *session.Session
 	bucket   string
 	s3Client *s3.S3
 }
 
-func NewR2Uploader(bucket string) (*R2Uploader, error) {
+func NewR2Uploader(bucket string, log logger.Logger) (*R2Uploader, error) {
 	accountID := os.Getenv("CF_ACCOUNT_ID")
 	accessKeyID := os.Getenv("CF_ACCESS_KEY_ID")
 	accessKeySecret := os.Getenv("CF_ACCESS_KEY_SECRET")
@@ -38,17 +39,28 @@ func NewR2Uploader(bucket string) (*R2Uploader, error) {
 		return nil, err
 	}
 
-	s3Client := s3.New(sess)
-
-	return &R2Uploader{
-		uploader: s3manager.NewUploaderWithClient(s3Client),
+	uploader := &R2Uploader{
+		session:  sess,
 		bucket:   bucket,
-		s3Client: s3Client,
-	}, nil
+		s3Client: s3.New(sess),
+	}
+
+	// Log the provider initialization
+	log.Info("Initialized storage provider",
+		"provider", "Cloudflare R2",
+		"account", accountID,
+		"bucket", bucket)
+
+	return uploader, nil
 }
 
 func (u *R2Uploader) Upload(ctx context.Context, key string, reader io.Reader, size int64) error {
-	_, err := u.uploader.UploadWithContext(ctx, &s3manager.UploadInput{
+	uploader := s3manager.NewUploader(u.session, func(u *s3manager.Uploader) {
+		u.PartSize = 100 * 1024 * 1024 // 100MB parts
+		u.Concurrency = 10             // 10 concurrent uploads
+	})
+
+	_, err := uploader.UploadWithContext(ctx, &s3manager.UploadInput{
 		Bucket: aws.String(u.bucket),
 		Key:    aws.String(key),
 		Body:   reader,
@@ -57,8 +69,13 @@ func (u *R2Uploader) Upload(ctx context.Context, key string, reader io.Reader, s
 }
 
 func (u *R2Uploader) Download(ctx context.Context, key string, writer io.Writer) error {
-	downloader := s3manager.NewDownloaderWithClient(u.s3Client)
-	_, err := downloader.DownloadWithContext(ctx, writer.(io.WriterAt), &s3.GetObjectInput{
+	downloader := s3manager.NewDownloader(u.session, func(d *s3manager.Downloader) {
+		d.PartSize = 100 * 1024 * 1024 // 100MB parts
+		d.Concurrency = 10             // 10 concurrent downloads
+	})
+
+	writerAt := newWriterAtWrapper(writer)
+	_, err := downloader.DownloadWithContext(ctx, writerAt, &s3.GetObjectInput{
 		Bucket: aws.String(u.bucket),
 		Key:    aws.String(key),
 	})
@@ -95,7 +112,7 @@ func (u *R2Uploader) FileExists(ctx context.Context, key string) (bool, error) {
 	if err != nil {
 		if aerr, ok := err.(awserr.Error); ok {
 			switch aerr.Code() {
-			case s3.ErrCodeNoSuchKey:
+			case "NotFound", "NoSuchKey", "404":
 				return false, nil
 			default:
 				return false, err

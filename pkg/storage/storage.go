@@ -14,11 +14,6 @@ import (
 	"github.com/urfave/cli/v2"
 )
 
-type FileInfo struct {
-	LastModified time.Time
-	Size         int64
-}
-
 type Uploader interface {
 	Upload(ctx context.Context, key string, reader io.Reader, size int64) error
 	Download(ctx context.Context, key string, writer io.Writer) error

@@ -40,13 +40,13 @@ func TestIntegration(t *testing.T) {
 		uploader func() (storage.Uploader, error)
 	}{
 		{"S3", func() (storage.Uploader, error) {
-			return storage.NewS3Uploader(os.Getenv("AWS_REGION"), os.Getenv("AWS_BUCKET"))
+			return storage.NewS3Uploader(os.Getenv("AWS_REGION"), os.Getenv("AWS_BUCKET"), log)
 		}},
 		{"B2", func() (storage.Uploader, error) {
-			return storage.NewB2Uploader(os.Getenv("B2_BUCKET"))
+			return storage.NewB2Uploader(os.Getenv("B2_BUCKET"), log)
 		}},
 		{"R2", func() (storage.Uploader, error) {
-			return storage.NewR2Uploader(os.Getenv("R2_BUCKET"))
+			return storage.NewR2Uploader(os.Getenv("R2_BUCKET"), log)
 		}},
 	}
 

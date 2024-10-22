@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/Backblaze/blazer/b2"
+	"github.com/ngns-io/baxfer/pkg/logger"
 )
 
 type B2Uploader struct {
@@ -14,17 +15,24 @@ type B2Uploader struct {
 	bucket string
 }
 
-func NewB2Uploader(bucket string) (*B2Uploader, error) {
+func NewB2Uploader(bucket string, log logger.Logger) (*B2Uploader, error) {
 	ctx := context.Background()
 	client, err := b2.NewClient(ctx, os.Getenv("B2_KEY_ID"), os.Getenv("B2_APP_KEY"))
 	if err != nil {
 		return nil, err
 	}
 
-	return &B2Uploader{
+	uploader := &B2Uploader{
 		client: client,
 		bucket: bucket,
-	}, nil
+	}
+
+	// Log the provider initialization
+	log.Info("Initialized storage provider",
+		"provider", "Backblaze B2",
+		"bucket", bucket)
+
+	return uploader, nil
 }
 
 func (u *B2Uploader) Upload(ctx context.Context, key string, reader io.Reader, size int64) error {
@@ -33,8 +41,8 @@ func (u *B2Uploader) Upload(ctx context.Context, key string, reader io.Reader, s
 		return err
 	}
 
-	obj := b.Object(key)
-	w := obj.NewWriter(ctx)
+	w := b.Object(key).NewWriter(ctx)
+	w.ConcurrentUploads = 5 // Number of concurrent upload threads
 	defer w.Close()
 
 	_, err = io.Copy(w, reader)
@@ -47,10 +55,10 @@ func (u *B2Uploader) Download(ctx context.Context, key string, writer io.Writer)
 		return err
 	}
 
-	obj := b.Object(key)
-	r := obj.NewReader(ctx)
+	r := b.Object(key).NewReader(ctx)
 	defer r.Close()
 
+	// B2 reader automatically handles concurrent downloads
 	_, err = io.Copy(writer, r)
 	return err
 }
