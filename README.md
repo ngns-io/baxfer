@@ -74,13 +74,19 @@ baxfer upload [options] <root directory>
 ```
 
 Options:
-- `--provider`, `-p`: Storage provider (s3, b2, b2s3, or r2) [default: "s3"]
+- `--provider`, `-p`: Storage provider (s3, b2, b2s3, r2, or sftp) [default: "s3"]
 - `--region`, `-r`: AWS region (for S3 and b2s3 only) [default: "us-east-1" for s3 and "us-west-002" for b2s3]
 - `--bucket`, `-b`: Storage bucket name
 - `--keyprefix`, `-k`: Prefix for storage keys
 - `--backupext`, `-x`: File extension for backup files [default: ".bak"]
 - `--compress`, `-c`: Compress files before uploading
 - `--non-interactive`: Run in non-interactive mode (no progress bars)
+
+SFTP-specific options:
+- `--sftp-host`: SFTP server hostname (env: SFTP_HOST)
+- `--sftp-port`: SFTP server port [default: 22] (env: SFTP_PORT)
+- `--sftp-user`: SFTP username (env: SFTP_USER)
+- `--sftp-path`: Base path on SFTP server (env: SFTP_PATH)
 
 ### Download
 
@@ -91,10 +97,16 @@ baxfer download [options] <key>
 ```
 
 Options:
-- `--provider`, `-p`: Storage provider (s3, b2, b2s3, or r2) [default: "s3"]
+- `--provider`, `-p`: Storage provider (s3, b2, b2s3, r2, or sftp) [default: "s3"]
 - `--region`, `-r`: AWS region (for S3 and b2s3 only) [default: "us-east-1" for s3 and "us-west-002" for b2s3]
 - `--bucket`, `-b`: Storage bucket name
 - `--output`, `-o`: Output file name
+
+SFTP-specific options:
+- `--sftp-host`: SFTP server hostname (env: SFTP_HOST)
+- `--sftp-port`: SFTP server port [default: 22] (env: SFTP_PORT)
+- `--sftp-user`: SFTP username (env: SFTP_USER)
+- `--sftp-path`: Base path on SFTP server (env: SFTP_PATH)
 
 ### Prune
 
@@ -105,11 +117,17 @@ baxfer prune [options]
 ```
 
 Options:
-- `--provider`, `-p`: Storage provider (s3, b2, or r2) [default: "s3"]
+- `--provider`, `-p`: Storage provider (s3, b2, b2s3, r2, or sftp) [default: "s3"]
 - `--region`, `-r`: AWS region (for S3 and b2s3 only) [default: "us-east-1" for s3 and "us-west-002" for b2s3]
 - `--bucket`, `-b`: Storage bucket name
 - `--keyprefix`, `-k`: Prefix for storage keys
 - `--age`, `-a`: Age of files to prune (e.g., 720h for 30 days)
+
+SFTP-specific options:
+- `--sftp-host`: SFTP server hostname (env: SFTP_HOST)
+- `--sftp-port`: SFTP server port [default: 22] (env: SFTP_PORT)
+- `--sftp-user`: SFTP username (env: SFTP_USER)
+- `--sftp-path`: Base path on SFTP server (env: SFTP_PATH)
 
 ## CLI Usage Examples
 
