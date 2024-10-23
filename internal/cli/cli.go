@@ -102,7 +102,7 @@ func newUploadCommand() *cli.Command {
 			&cli.StringFlag{
 				Name:    "provider",
 				Aliases: []string{"p"},
-				Usage:   "Storage provider (s3, b2, b2s3, or r2)",
+				Usage:   "Storage provider (s3, b2, b2s3, r2, or sftp)",
 				Value:   "s3",
 			},
 			&cli.StringFlag{
@@ -132,6 +132,28 @@ func newUploadCommand() *cli.Command {
 				Aliases: []string{"c"},
 				Usage:   "Compress files before uploading",
 			},
+			// Add SFTP-specific flags:
+			&cli.StringFlag{
+				Name:    "sftp-host",
+				Usage:   "SFTP server hostname",
+				EnvVars: []string{"SFTP_HOST"},
+			},
+			&cli.IntFlag{
+				Name:    "sftp-port",
+				Usage:   "SFTP server port",
+				Value:   22,
+				EnvVars: []string{"SFTP_PORT"},
+			},
+			&cli.StringFlag{
+				Name:    "sftp-user",
+				Usage:   "SFTP username",
+				EnvVars: []string{"SFTP_USER"},
+			},
+			&cli.StringFlag{
+				Name:    "sftp-path",
+				Usage:   "Base path on SFTP server",
+				EnvVars: []string{"SFTP_PATH"},
+			},
 		},
 		Action: func(c *cli.Context) error {
 			log := c.App.Metadata["logger"].(logger.Logger)
@@ -154,7 +176,7 @@ func newDownloadCommand() *cli.Command {
 			&cli.StringFlag{
 				Name:    "provider",
 				Aliases: []string{"p"},
-				Usage:   "Storage provider (s3, b2, b2s3, or r2)",
+				Usage:   "Storage provider (s3, b2, b2s3, r2, or sftp)",
 				Value:   "s3",
 			},
 			&cli.StringFlag{
@@ -172,6 +194,28 @@ func newDownloadCommand() *cli.Command {
 				Name:    "output",
 				Aliases: []string{"o"},
 				Usage:   "Output file name",
+			},
+			// Add SFTP-specific flags:
+			&cli.StringFlag{
+				Name:    "sftp-host",
+				Usage:   "SFTP server hostname",
+				EnvVars: []string{"SFTP_HOST"},
+			},
+			&cli.IntFlag{
+				Name:    "sftp-port",
+				Usage:   "SFTP server port",
+				Value:   22,
+				EnvVars: []string{"SFTP_PORT"},
+			},
+			&cli.StringFlag{
+				Name:    "sftp-user",
+				Usage:   "SFTP username",
+				EnvVars: []string{"SFTP_USER"},
+			},
+			&cli.StringFlag{
+				Name:    "sftp-path",
+				Usage:   "Base path on SFTP server",
+				EnvVars: []string{"SFTP_PATH"},
 			},
 		},
 		Action: func(c *cli.Context) error {
@@ -194,7 +238,7 @@ func newPruneCommand() *cli.Command {
 			&cli.StringFlag{
 				Name:    "provider",
 				Aliases: []string{"p"},
-				Usage:   "Storage provider (s3, b2, b2s3, or r2)",
+				Usage:   "Storage provider (s3, b2, b2s3, r2, or sftp)",
 				Value:   "s3",
 			},
 			&cli.StringFlag{
@@ -218,6 +262,28 @@ func newPruneCommand() *cli.Command {
 				Aliases:  []string{"a"},
 				Usage:    "Age of files to prune (e.g., 720h for 30 days)",
 				Required: true,
+			},
+			// Add SFTP-specific flags:
+			&cli.StringFlag{
+				Name:    "sftp-host",
+				Usage:   "SFTP server hostname",
+				EnvVars: []string{"SFTP_HOST"},
+			},
+			&cli.IntFlag{
+				Name:    "sftp-port",
+				Usage:   "SFTP server port",
+				Value:   22,
+				EnvVars: []string{"SFTP_PORT"},
+			},
+			&cli.StringFlag{
+				Name:    "sftp-user",
+				Usage:   "SFTP username",
+				EnvVars: []string{"SFTP_USER"},
+			},
+			&cli.StringFlag{
+				Name:    "sftp-path",
+				Usage:   "Base path on SFTP server",
+				EnvVars: []string{"SFTP_PATH"},
 			},
 		},
 		Action: func(c *cli.Context) error {
@@ -247,6 +313,15 @@ func getUploader(c *cli.Context) (storage.Uploader, error) {
 		return storage.NewB2S3Uploader(region, bucket, log)
 	case "r2":
 		return storage.NewR2Uploader(bucket, log)
+	case "sftp":
+		host := c.String("sftp-host")
+		port := c.Int("sftp-port")
+		user := c.String("sftp-user")
+		path := c.String("sftp-path")
+		if host == "" || user == "" || path == "" {
+			return nil, fmt.Errorf("SFTP provider requires host, user, and path")
+		}
+		return storage.NewSFTPUploader(host, port, user, path, log)
 	default:
 		return nil, fmt.Errorf("unsupported storage provider: %s", provider)
 	}

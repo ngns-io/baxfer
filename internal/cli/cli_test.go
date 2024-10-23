@@ -32,11 +32,32 @@ func TestUploadCommand(t *testing.T) {
 	assert.Contains(t, uploadCmd.Aliases, "u")
 
 	// Test that all expected flags are present
-	flagNames := []string{"provider", "region", "bucket", "keyprefix", "backupext", "compress", "non-interactive"}
+	flagNames := []string{
+		"provider", "region", "bucket", "keyprefix", "backupext",
+		"compress", "non-interactive",
+		"sftp-host", "sftp-port", "sftp-user", "sftp-path",
+	}
 	for _, name := range flagNames {
 		flag := findFlag(uploadCmd.Flags, name)
 		assert.NotNil(t, flag, "Flag %s should exist", name)
 	}
+
+	// Test SFTP-specific flag defaults and types
+	sftpPortFlag := findFlag(uploadCmd.Flags, "sftp-port").(*cli.IntFlag)
+	assert.Equal(t, 22, sftpPortFlag.Value)
+
+	sftpHostFlag := findFlag(uploadCmd.Flags, "sftp-host").(*cli.StringFlag)
+	assert.Contains(t, sftpHostFlag.EnvVars, "SFTP_HOST")
+}
+
+func TestProviderFlags(t *testing.T) {
+	app := NewApp()
+	uploadCmd := findCommand(app.Commands, "upload")
+	assert.NotNil(t, uploadCmd)
+
+	providerFlag := findFlag(uploadCmd.Flags, "provider").(*cli.StringFlag)
+	assert.Equal(t, "s3", providerFlag.Value)
+	assert.Contains(t, providerFlag.Usage, "sftp")
 }
 
 // Helper function to find a command by name

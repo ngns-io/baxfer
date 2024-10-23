@@ -29,6 +29,8 @@ No warranty is provided, either expressed or implied. The authors and contributo
   - [Amazon S3 Configuration](#amazon-s3-configuration)
   - [Backblaze B2 Configuration](#backblaze-b2-configuration)
   - [Cloudflare R2 Configuration](#cloudflare-r2-configuration)
+  - [SFTP Configuration](#sftp-configuration)
+    - [Environment Variables](#environment-variables)
   - [Running baxfer as a Background Process](#running-baxfer-as-a-background-process)
     - [Windows Task Scheduler Setup](#windows-task-scheduler-setup)
     - [Linux Cron Setup](#linux-cron-setup)
@@ -39,9 +41,9 @@ No warranty is provided, either expressed or implied. The authors and contributo
 
 ## Features
 
-- Upload backup files to Amazon S3, Backblaze B2, or Cloudflare R2
-- Download backup files from cloud storage
-- Prune old backup files from cloud storage
+- Upload backup files to Amazon S3, Backblaze B2, Cloudflare R2, or SFTP servers
+- Download backup files from cloud storage or SFTP
+- Prune old backup files from storage
 - Supports both interactive and non-interactive modes
 - Progress bar for file transfers in interactive mode
 - Configurable file extension filtering
@@ -90,7 +92,7 @@ baxfer download [options] <key>
 
 Options:
 - `--provider`, `-p`: Storage provider (s3, b2, b2s3, or r2) [default: "s3"]
-- `--region`, `-r`: AWS region (for S3 only) [default: "us-east-1" for s3 and "us-west-002" for b2s3]
+- `--region`, `-r`: AWS region (for S3 and b2s3 only) [default: "us-east-1" for s3 and "us-west-002" for b2s3]
 - `--bucket`, `-b`: Storage bucket name
 - `--output`, `-o`: Output file name
 
@@ -284,6 +286,47 @@ export CF_ACCESS_KEY_SECRET=your_access_key_secret
 
 baxfer upload --provider r2 --bucket your-bucket-name /path/to/backups
 ```
+
+## SFTP Configuration
+
+To use SFTP as your storage provider, you need to set up either password or private key authentication:
+
+### Environment Variables
+- `SFTP_HOST`: SFTP server hostname (can be set via --sftp-host flag)
+- `SFTP_PORT`: SFTP server port (can be set via --sftp-port flag, defaults to 22)
+- `SFTP_USER`: SFTP username (can be set via --sftp-user flag)
+- `SFTP_PATH`: Base path on SFTP server (can be set via --sftp-path flag)
+- `SFTP_PRIVATE_KEY`: Path to SSH private key file
+- `SFTP_PASSWORD`: Password for authentication (only used if SFTP_PRIVATE_KEY is not set)
+
+Example usage with private key authentication:
+```bash
+export SFTP_PRIVATE_KEY=/path/to/private_key
+export SFTP_USER=backup_user
+
+baxfer upload \
+    --provider sftp \
+    --sftp-host backup.example.com \
+    --sftp-path /backup/files \
+    /path/to/backups
+```
+
+Example usage with password authentication:
+```bash
+export SFTP_PASSWORD=your_secure_password
+export SFTP_USER=backup_user
+
+baxfer upload \
+    --provider sftp \
+    --sftp-host backup.example.com \
+    --sftp-port 2222 \
+    --sftp-path /backup/files \
+    /path/to/backups
+```
+
+Configuration options can be provided either through environment variables or command-line flags. Command-line flags take precedence over environment variables.
+
+Note: For security reasons, it's recommended to use private key authentication rather than password authentication. Ensure that your private key file has appropriate permissions (600 or more restrictive).
 
 ## Running baxfer as a Background Process
 
