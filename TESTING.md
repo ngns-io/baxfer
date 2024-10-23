@@ -64,9 +64,24 @@
 1. Create a separate package for integration tests (e.g., `integrationtest`).
 2. Use environment variables to control whether integration tests run:
    ```
-   BAXFER_INTEGRATION_TESTS=1 go test ./integrationtest
+   RUN_INTEGRATION_TESTS=1 go test ./integrationtest
    ```
 3. Ensure integration tests clean up any resources they create.
+
+To run the SFTP integration tests, you would set these environment variables:
+
+```bash
+export RUN_INTEGRATION_TESTS=true
+export SFTP_HOST=your-sftp-server
+export SFTP_USER=your-username
+export SFTP_PATH=/path/on/server
+export SFTP_PRIVATE_KEY=/path/to/private/key
+# or
+export SFTP_PASSWORD=your-password
+export SFTP_PORT=22  # optional, defaults to 22
+
+go test -v ./test/integration
+```
 
 ## Performance Tests
 
