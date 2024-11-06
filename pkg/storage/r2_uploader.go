@@ -2,23 +2,24 @@ package storage
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
+	"strings"
 
-	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/aws/awserr"
-	"github.com/aws/aws-sdk-go/aws/credentials"
-	"github.com/aws/aws-sdk-go/aws/session"
-	"github.com/aws/aws-sdk-go/service/s3"
-	"github.com/aws/aws-sdk-go/service/s3/s3manager"
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/config"
+	"github.com/aws/aws-sdk-go-v2/credentials"
+	"github.com/aws/aws-sdk-go-v2/service/s3"
+	"github.com/aws/aws-sdk-go-v2/service/s3/types"
 	"github.com/ngns-io/baxfer/pkg/logger"
 )
 
 type R2Uploader struct {
-	session  *session.Session
-	bucket   string
-	s3Client *s3.S3
+	client *s3.Client
+	bucket string
+	log    logger.Logger
 }
 
 func NewR2Uploader(bucket string, log logger.Logger) (*R2Uploader, error) {
@@ -30,22 +31,29 @@ func NewR2Uploader(bucket string, log logger.Logger) (*R2Uploader, error) {
 		return nil, fmt.Errorf("Cloudflare R2 credentials not found in environment variables")
 	}
 
-	sess, err := session.NewSession(&aws.Config{
-		Credentials: credentials.NewStaticCredentials(accessKeyID, accessKeySecret, ""),
-		Endpoint:    aws.String("https://" + accountID + ".r2.cloudflarestorage.com"),
-		Region:      aws.String("auto"),
-	})
+	customEndpoint := fmt.Sprintf("https://%s.r2.cloudflarestorage.com", accountID)
+
+	cfg, err := config.LoadDefaultConfig(context.Background(),
+		config.WithCredentialsProvider(credentials.NewStaticCredentialsProvider(
+			accessKeyID, accessKeySecret, "",
+		)),
+		config.WithRegion("auto"),
+	)
 	if err != nil {
 		return nil, err
 	}
 
+	client := s3.NewFromConfig(cfg, func(o *s3.Options) {
+		o.BaseEndpoint = aws.String(customEndpoint)
+		o.UsePathStyle = true
+	})
+
 	uploader := &R2Uploader{
-		session:  sess,
-		bucket:   bucket,
-		s3Client: s3.New(sess),
+		client: client,
+		bucket: bucket,
+		log:    log,
 	}
 
-	// Log the provider initialization
 	log.Info("Initialized storage provider",
 		"provider", "Cloudflare R2",
 		"account", accountID,
@@ -55,85 +63,113 @@ func NewR2Uploader(bucket string, log logger.Logger) (*R2Uploader, error) {
 }
 
 func (u *R2Uploader) Upload(ctx context.Context, key string, reader io.Reader, size int64) error {
-	uploader := s3manager.NewUploader(u.session, func(u *s3manager.Uploader) {
-		u.PartSize = 100 * 1024 * 1024 // 100MB parts
-		u.Concurrency = 10             // 10 concurrent uploads
-	})
+	input := &s3.PutObjectInput{
+		Bucket:        &u.bucket,
+		Key:           &key,
+		Body:          reader,
+		ContentLength: aws.Int64(size),
+	}
 
-	_, err := uploader.UploadWithContext(ctx, &s3manager.UploadInput{
-		Bucket: aws.String(u.bucket),
-		Key:    aws.String(key),
-		Body:   reader,
+	// Force path-style addressing for R2
+	_, err := u.client.PutObject(ctx, input, func(o *s3.Options) {
+		o.UsePathStyle = true
 	})
 	return err
 }
 
 func (u *R2Uploader) Download(ctx context.Context, key string, writer io.Writer) error {
-	downloader := s3manager.NewDownloader(u.session, func(d *s3manager.Downloader) {
-		d.PartSize = 100 * 1024 * 1024 // 100MB parts
-		d.Concurrency = 10             // 10 concurrent downloads
+	output, err := u.client.GetObject(ctx, &s3.GetObjectInput{
+		Bucket: &u.bucket,
+		Key:    &key,
 	})
+	if err != nil {
+		return err
+	}
+	defer output.Body.Close()
 
-	writerAt := newWriterAtWrapper(writer)
-	_, err := downloader.DownloadWithContext(ctx, writerAt, &s3.GetObjectInput{
-		Bucket: aws.String(u.bucket),
-		Key:    aws.String(key),
-	})
+	_, err = io.Copy(writer, output.Body)
 	return err
 }
 
 func (u *R2Uploader) List(ctx context.Context, prefix string) ([]string, error) {
 	var keys []string
-	err := u.s3Client.ListObjectsV2PagesWithContext(ctx, &s3.ListObjectsV2Input{
-		Bucket: aws.String(u.bucket),
-		Prefix: aws.String(prefix),
-	}, func(page *s3.ListObjectsV2Output, lastPage bool) bool {
+	paginator := s3.NewListObjectsV2Paginator(u.client, &s3.ListObjectsV2Input{
+		Bucket: &u.bucket,
+		Prefix: &prefix,
+	})
+
+	for paginator.HasMorePages() {
+		page, err := paginator.NextPage(ctx)
+		if err != nil {
+			return nil, err
+		}
 		for _, obj := range page.Contents {
 			keys = append(keys, *obj.Key)
 		}
-		return true
-	})
-	return keys, err
+	}
+
+	return keys, nil
 }
 
 func (u *R2Uploader) Delete(ctx context.Context, key string) error {
-	_, err := u.s3Client.DeleteObjectWithContext(ctx, &s3.DeleteObjectInput{
-		Bucket: aws.String(u.bucket),
-		Key:    aws.String(key),
+	_, err := u.client.DeleteObject(ctx, &s3.DeleteObjectInput{
+		Bucket: &u.bucket,
+		Key:    &key,
 	})
 	return err
 }
 
 func (u *R2Uploader) FileExists(ctx context.Context, key string) (bool, error) {
-	_, err := u.s3Client.HeadObjectWithContext(ctx, &s3.HeadObjectInput{
-		Bucket: aws.String(u.bucket),
-		Key:    aws.String(key),
+	_, err := u.client.HeadObject(ctx, &s3.HeadObjectInput{
+		Bucket: &u.bucket,
+		Key:    &key,
 	})
 	if err != nil {
-		if aerr, ok := err.(awserr.Error); ok {
-			switch aerr.Code() {
-			case "NotFound", "NoSuchKey", "404":
-				return false, nil
-			default:
-				return false, err
-			}
+		// Log the raw error for debugging
+		u.log.Debug("HeadObject error details",
+			"error", err,
+			"bucket", u.bucket,
+			"key", key)
+
+		// Check for any type of "not found" response
+		var (
+			nsk      *types.NoSuchKey
+			notFound *types.NotFound
+		)
+		if errors.As(err, &nsk) ||
+			errors.As(err, &notFound) ||
+			strings.Contains(err.Error(), "NotFound") ||
+			strings.Contains(err.Error(), "status code: 404") ||
+			strings.Contains(err.Error(), "StatusCode: 404") {
+			return false, nil
 		}
-		return false, err
+
+		// For R2-specific errors, check the status code
+		if strings.Contains(err.Error(), "StatusCode: 411") ||
+			strings.Contains(err.Error(), "MissingContentLength") {
+			// Log this unexpected condition
+			u.log.Warn("Unexpected 411 error from R2 HeadObject",
+				"bucket", u.bucket,
+				"key", key)
+			return false, nil // Assume file doesn't exist
+		}
+
+		return false, fmt.Errorf("error checking if file exists: %w", err)
 	}
 	return true, nil
 }
 
 func (u *R2Uploader) GetFileInfo(ctx context.Context, key string) (*FileInfo, error) {
-	result, err := u.s3Client.HeadObjectWithContext(ctx, &s3.HeadObjectInput{
-		Bucket: aws.String(u.bucket),
-		Key:    aws.String(key),
+	output, err := u.client.HeadObject(ctx, &s3.HeadObjectInput{
+		Bucket: &u.bucket,
+		Key:    &key,
 	})
 	if err != nil {
 		return nil, err
 	}
 
 	return &FileInfo{
-		LastModified: *result.LastModified,
-		Size:         *result.ContentLength,
+		LastModified: *output.LastModified,
+		Size:         *output.ContentLength,
 	}, nil
 }

@@ -2,21 +2,23 @@ package storage
 
 import (
 	"context"
+	"errors"
 	"io"
 	"os"
+	"strings"
 
-	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/aws/awserr"
-	"github.com/aws/aws-sdk-go/aws/session"
-	"github.com/aws/aws-sdk-go/service/s3"
-	"github.com/aws/aws-sdk-go/service/s3/s3manager"
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/config"
+	"github.com/aws/aws-sdk-go-v2/feature/s3/manager"
+	"github.com/aws/aws-sdk-go-v2/service/s3"
+	"github.com/aws/aws-sdk-go-v2/service/s3/types"
 	"github.com/ngns-io/baxfer/pkg/logger"
 )
 
 type S3Uploader struct {
-	session  *session.Session
-	bucket   string
-	s3Client *s3.S3
+	client *s3.Client
+	bucket string
+	log    logger.Logger
 }
 
 func NewS3Uploader(region, bucket string, log logger.Logger) (*S3Uploader, error) {
@@ -28,17 +30,19 @@ func NewS3Uploader(region, bucket string, log logger.Logger) (*S3Uploader, error
 		}
 	}
 
-	sess, err := session.NewSession(&aws.Config{
-		Region: aws.String(region),
-	})
+	cfg, err := config.LoadDefaultConfig(context.Background(),
+		config.WithRegion(region),
+	)
 	if err != nil {
 		return nil, err
 	}
 
+	client := s3.NewFromConfig(cfg)
+
 	uploader := &S3Uploader{
-		session:  sess,
-		bucket:   bucket,
-		s3Client: s3.New(sess),
+		client: client,
+		bucket: bucket,
+		log:    log,
 	}
 
 	// Log the provider initialization
@@ -51,68 +55,78 @@ func NewS3Uploader(region, bucket string, log logger.Logger) (*S3Uploader, error
 }
 
 func (u *S3Uploader) Upload(ctx context.Context, key string, reader io.Reader, size int64) error {
-	uploader := s3manager.NewUploader(u.session, func(u *s3manager.Uploader) {
-		u.PartSize = 100 * 1024 * 1024 // 100MB parts
-		u.Concurrency = 10             // 10 concurrent uploads
+	uploader := manager.NewUploader(u.client, func(u *manager.Uploader) {
+		u.PartSize = 100 * 1024 * 1024
+		u.Concurrency = 10
 	})
 
-	_, err := uploader.UploadWithContext(ctx, &s3manager.UploadInput{
-		Bucket: aws.String(u.bucket),
-		Key:    aws.String(key),
-		Body:   reader,
+	_, err := uploader.Upload(ctx, &s3.PutObjectInput{
+		Bucket:        &u.bucket,
+		Key:           &key,
+		Body:          reader,
+		ContentLength: aws.Int64(size), // Convert int64 to *int64
 	})
 	return err
 }
 
 func (u *S3Uploader) Download(ctx context.Context, key string, writer io.Writer) error {
-	downloader := s3manager.NewDownloader(u.session, func(d *s3manager.Downloader) {
-		d.PartSize = 100 * 1024 * 1024 // 100MB parts
-		d.Concurrency = 10             // 10 concurrent downloads
+	output, err := u.client.GetObject(ctx, &s3.GetObjectInput{
+		Bucket: &u.bucket,
+		Key:    &key,
 	})
+	if err != nil {
+		return err
+	}
+	defer output.Body.Close()
 
-	writerAt := newWriterAtWrapper(writer)
-	_, err := downloader.DownloadWithContext(ctx, writerAt, &s3.GetObjectInput{
-		Bucket: aws.String(u.bucket),
-		Key:    aws.String(key),
-	})
+	_, err = io.Copy(writer, output.Body)
 	return err
 }
 
 func (u *S3Uploader) List(ctx context.Context, prefix string) ([]string, error) {
 	var keys []string
-	err := u.s3Client.ListObjectsV2PagesWithContext(ctx, &s3.ListObjectsV2Input{
-		Bucket: aws.String(u.bucket),
-		Prefix: aws.String(prefix),
-	}, func(page *s3.ListObjectsV2Output, lastPage bool) bool {
+	paginator := s3.NewListObjectsV2Paginator(u.client, &s3.ListObjectsV2Input{
+		Bucket: &u.bucket,
+		Prefix: &prefix,
+	})
+
+	for paginator.HasMorePages() {
+		page, err := paginator.NextPage(ctx)
+		if err != nil {
+			return nil, err
+		}
 		for _, obj := range page.Contents {
 			keys = append(keys, *obj.Key)
 		}
-		return true
-	})
-	return keys, err
+	}
+
+	return keys, nil
 }
 
 func (u *S3Uploader) Delete(ctx context.Context, key string) error {
-	_, err := u.s3Client.DeleteObjectWithContext(ctx, &s3.DeleteObjectInput{
-		Bucket: aws.String(u.bucket),
-		Key:    aws.String(key),
+	_, err := u.client.DeleteObject(ctx, &s3.DeleteObjectInput{
+		Bucket: &u.bucket,
+		Key:    &key,
 	})
 	return err
 }
 
 func (u *S3Uploader) FileExists(ctx context.Context, key string) (bool, error) {
-	_, err := u.s3Client.HeadObjectWithContext(ctx, &s3.HeadObjectInput{
-		Bucket: aws.String(u.bucket),
-		Key:    aws.String(key),
+	_, err := u.client.HeadObject(ctx, &s3.HeadObjectInput{
+		Bucket: &u.bucket,
+		Key:    &key,
 	})
 	if err != nil {
-		if aerr, ok := err.(awserr.Error); ok {
-			switch aerr.Code() {
-			case "NotFound":
-				return false, nil
-			default:
-				return false, err
-			}
+		// Check for various forms of "not found" errors
+		var (
+			nsk      *types.NoSuchKey
+			notFound *types.NotFound
+		)
+		if errors.As(err, &nsk) ||
+			errors.As(err, &notFound) ||
+			strings.Contains(err.Error(), "NotFound") ||
+			strings.Contains(err.Error(), "status code: 404") {
+			return false, nil
 		}
 		return false, err
 	}
@@ -120,18 +134,16 @@ func (u *S3Uploader) FileExists(ctx context.Context, key string) (bool, error) {
 }
 
 func (u *S3Uploader) GetFileInfo(ctx context.Context, key string) (*FileInfo, error) {
-	input := &s3.HeadObjectInput{
-		Bucket: aws.String(u.bucket),
-		Key:    aws.String(key),
-	}
-
-	result, err := u.s3Client.HeadObjectWithContext(ctx, input)
+	output, err := u.client.HeadObject(ctx, &s3.HeadObjectInput{
+		Bucket: &u.bucket,
+		Key:    &key,
+	})
 	if err != nil {
 		return nil, err
 	}
 
 	return &FileInfo{
-		LastModified: *result.LastModified,
-		Size:         *result.ContentLength,
+		LastModified: *output.LastModified,
+		Size:         *output.ContentLength,
 	}, nil
 }
