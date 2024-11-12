@@ -2,6 +2,7 @@ package storage
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"os"
 	"strings"
@@ -52,7 +53,7 @@ func (u *B2Uploader) Upload(ctx context.Context, key string, reader io.Reader, s
 func (u *B2Uploader) Download(ctx context.Context, key string, writer io.Writer) error {
 	b, err := u.client.Bucket(ctx, u.bucket)
 	if err != nil {
-		return err
+		return formatDownloadError("b2", key, err)
 	}
 
 	r := b.Object(key).NewReader(ctx)
@@ -60,7 +61,13 @@ func (u *B2Uploader) Download(ctx context.Context, key string, writer io.Writer)
 
 	// B2 reader automatically handles concurrent downloads
 	_, err = io.Copy(writer, r)
-	return err
+	if err != nil {
+		return &UserError{
+			Message: fmt.Sprintf("Error reading file content: %s", key),
+			Cause:   err,
+		}
+	}
+	return nil
 }
 
 func (u *B2Uploader) List(ctx context.Context, prefix string) ([]string, error) {

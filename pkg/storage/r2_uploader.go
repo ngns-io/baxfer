@@ -83,12 +83,18 @@ func (u *R2Uploader) Download(ctx context.Context, key string, writer io.Writer)
 		Key:    &key,
 	})
 	if err != nil {
-		return err
+		return formatDownloadError("r2", key, err)
 	}
 	defer output.Body.Close()
 
 	_, err = io.Copy(writer, output.Body)
-	return err
+	if err != nil {
+		return &UserError{
+			Message: fmt.Sprintf("Error reading file content: %s", key),
+			Cause:   err,
+		}
+	}
+	return nil
 }
 
 func (u *R2Uploader) List(ctx context.Context, prefix string) ([]string, error) {

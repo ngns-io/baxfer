@@ -3,6 +3,7 @@ package storage
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"os"
 	"strings"
@@ -75,12 +76,18 @@ func (u *S3Uploader) Download(ctx context.Context, key string, writer io.Writer)
 		Key:    &key,
 	})
 	if err != nil {
-		return err
+		return formatDownloadError("s3", key, err)
 	}
 	defer output.Body.Close()
 
 	_, err = io.Copy(writer, output.Body)
-	return err
+	if err != nil {
+		return &UserError{
+			Message: fmt.Sprintf("Error reading file content: %s", key),
+			Cause:   err,
+		}
+	}
+	return nil
 }
 
 func (u *S3Uploader) List(ctx context.Context, prefix string) ([]string, error) {

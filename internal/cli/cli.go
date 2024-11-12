@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"errors"
 	"fmt"
 	"time"
 
@@ -224,7 +225,18 @@ func newDownloadCommand() *cli.Command {
 			if err != nil {
 				return cli.Exit(err.Error(), 1)
 			}
-			return storage.Download(c, uploader, log)
+
+			err = storage.Download(c, uploader, log)
+			if err != nil {
+				// If it's our user error, just show the message
+				var userErr *storage.UserError
+				if errors.As(err, &userErr) {
+					return cli.Exit(userErr.Message, 1)
+				}
+				// For unexpected errors, show a generic message
+				return cli.Exit("An unexpected error occurred while downloading the file", 1)
+			}
+			return nil
 		},
 	}
 }

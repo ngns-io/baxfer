@@ -98,12 +98,18 @@ func (u *B2S3Uploader) Download(ctx context.Context, key string, writer io.Write
 		Key:    &key,
 	})
 	if err != nil {
-		return err
+		return formatDownloadError("b2s3", key, err)
 	}
 	defer output.Body.Close()
 
 	_, err = io.Copy(writer, output.Body)
-	return err
+	if err != nil {
+		return &UserError{
+			Message: fmt.Sprintf("Error reading file content: %s", key),
+			Cause:   err,
+		}
+	}
+	return nil
 }
 
 func (u *B2S3Uploader) List(ctx context.Context, prefix string) ([]string, error) {

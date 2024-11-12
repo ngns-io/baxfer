@@ -118,12 +118,41 @@ func (u *SFTPUploader) Download(ctx context.Context, key string, writer io.Write
 
 	srcFile, err := u.client.Open(fullPath)
 	if err != nil {
-		return fmt.Errorf("failed to open remote file: %v", err)
+		// Log the original error for debugging
+		u.log.Error("Failed to open remote file",
+			"path", fullPath,
+			"error", err)
+
+		// Handle specific SFTP error cases
+		if os.IsNotExist(err) {
+			return &UserError{
+				Message: fmt.Sprintf("File not found: %s", key),
+				Cause:   err,
+			}
+		}
+		if os.IsPermission(err) {
+			return &UserError{
+				Message: fmt.Sprintf("Permission denied accessing file: %s", key),
+				Cause:   err,
+			}
+		}
+		return formatSFTPError(key, err)
 	}
 	defer srcFile.Close()
 
 	_, err = io.Copy(writer, srcFile)
-	return err
+	if err != nil {
+		u.log.Error("Failed to copy file content",
+			"path", fullPath,
+			"error", err)
+
+		return &UserError{
+			Message: fmt.Sprintf("Error reading file content: %s", key),
+			Cause:   err,
+		}
+	}
+
+	return nil
 }
 
 func (u *SFTPUploader) List(ctx context.Context, prefix string) ([]string, error) {
