@@ -14,6 +14,43 @@ import (
 	"github.com/urfave/cli/v2"
 )
 
+// streamingZipWriter implements an io.Writer that creates a zip file on the fly
+type streamingZipWriter struct {
+	zipWriter *zip.Writer
+	writer    io.Writer
+}
+
+// newStreamingZipWriter creates a new streaming zip writer
+func newStreamingZipWriter(w io.Writer, fileName string) (*streamingZipWriter, error) {
+	zipW := zip.NewWriter(w)
+
+	// Create a new file header
+	header := &zip.FileHeader{
+		Name:   strings.ReplaceAll(filepath.Base(fileName), "\\", "/"), // Ensure Windows compatibility
+		Method: zip.Deflate,
+	}
+
+	// Create the file in the zip
+	_, err := zipW.CreateHeader(header)
+	if err != nil {
+		zipW.Close()
+		return nil, err
+	}
+
+	return &streamingZipWriter{
+		zipWriter: zipW,
+		writer:    w,
+	}, nil
+}
+
+func (w *streamingZipWriter) Write(p []byte) (int, error) {
+	return w.writer.Write(p)
+}
+
+func (w *streamingZipWriter) Close() error {
+	return w.zipWriter.Close()
+}
+
 type Uploader interface {
 	Upload(ctx context.Context, key string, reader io.Reader, size int64) error
 	Download(ctx context.Context, key string, writer io.Writer) error
@@ -42,63 +79,6 @@ func constructKey(rootDir, keyPrefix, path string) (string, error) {
 	return key, nil
 }
 
-func compressFile(sourcePath string, log logger.Logger) (string, int64, error) {
-	zipPath := sourcePath + ".zip"
-	log.Info("Compressing file", "source", sourcePath, "destination", zipPath)
-
-	zipFile, err := os.Create(zipPath)
-	if err != nil {
-		return "", 0, err
-	}
-	defer zipFile.Close()
-
-	zipWriter := zip.NewWriter(zipFile)
-	defer zipWriter.Close()
-
-	sourceFile, err := os.Open(sourcePath)
-	if err != nil {
-		return "", 0, err
-	}
-	defer sourceFile.Close()
-
-	fileInfo, err := sourceFile.Stat()
-	if err != nil {
-		return "", 0, err
-	}
-
-	header, err := zip.FileInfoHeader(fileInfo)
-	if err != nil {
-		return "", 0, err
-	}
-
-	// Ensure Windows compatibility by using forward slashes
-	header.Name = strings.ReplaceAll(filepath.Base(sourcePath), "\\", "/")
-	header.Method = zip.Deflate
-
-	writer, err := zipWriter.CreateHeader(header)
-	if err != nil {
-		return "", 0, err
-	}
-
-	_, err = io.Copy(writer, sourceFile)
-	if err != nil {
-		return "", 0, err
-	}
-
-	err = zipWriter.Close()
-	if err != nil {
-		return "", 0, err
-	}
-
-	compressedInfo, err := os.Stat(zipPath)
-	if err != nil {
-		return "", 0, err
-	}
-
-	log.Info("File compressed successfully", "file", zipPath, "size", compressedInfo.Size())
-	return zipPath, compressedInfo.Size(), nil
-}
-
 func Upload(c *cli.Context, uploader Uploader, log logger.Logger) error {
 	rootDir := c.Args().First()
 	if rootDir == "" {
@@ -125,70 +105,78 @@ func Upload(c *cli.Context, uploader Uploader, log logger.Logger) error {
 			return err
 		}
 
-		compressedKey := strings.TrimSuffix(originalKey, filepath.Ext(originalKey)) + ".zip"
-
-		var uploadKey string
-		var uploadPath string
-		var uploadSize int64
-
+		uploadKey := originalKey
 		if compress {
-			uploadKey = compressedKey
-			eligible, err := fileUploadEligible(c.Context, uploader, uploadKey, info, log)
-			if err != nil {
-				log.Error("Error checking file eligibility", "file", path, "error", err)
-				return err
-			}
-
-			if !eligible {
-				log.Info("Skipping file (compressed version already uploaded or not modified)", "file", path)
-				return nil
-			}
-
-			compressedPath, compressedSize, err := compressFile(path, log)
-			if err != nil {
-				log.Error("Failed to compress file", "file", path, "error", err)
-				return err
-			}
-			uploadPath = compressedPath
-			uploadSize = compressedSize
-			defer os.Remove(compressedPath) // Clean up the compressed file after upload
-		} else {
-			uploadKey = originalKey
-			eligible, err := fileUploadEligible(c.Context, uploader, uploadKey, info, log)
-			if err != nil {
-				log.Error("Error checking file eligibility", "file", path, "error", err)
-				return err
-			}
-
-			if !eligible {
-				log.Info("Skipping file (already uploaded or not modified)", "file", path)
-				return nil
-			}
-
-			uploadPath = path
-			uploadSize = info.Size()
+			uploadKey = strings.TrimSuffix(originalKey, filepath.Ext(originalKey)) + ".zip"
 		}
 
-		file, err := os.Open(uploadPath)
+		eligible, err := fileUploadEligible(c.Context, uploader, uploadKey, info, log)
 		if err != nil {
-			log.Error("Failed to open file", "file", uploadPath, "error", err)
+			log.Error("Error checking file eligibility", "file", path, "error", err)
+			return err
+		}
+
+		if !eligible {
+			log.Info("Skipping file (already uploaded or not modified)", "file", path)
+			return nil
+		}
+
+		file, err := os.Open(path)
+		if err != nil {
+			log.Error("Failed to open file", "file", path, "error", err)
 			return err
 		}
 		defer file.Close()
 
 		var reader io.Reader = file
+		uploadSize := info.Size()
 
 		if !nonInteractive {
 			bar := progressbar.DefaultBytes(
 				uploadSize,
-				"Uploading "+filepath.Base(uploadPath),
+				"Uploading "+filepath.Base(path),
 			)
 			reader = io.TeeReader(reader, bar)
 		}
 
-		err = uploader.Upload(c.Context, uploadKey, reader, uploadSize)
+		// Create a pipe to stream data through
+		pr, pw := io.Pipe()
+
+		// Start a goroutine to handle the upload
+		uploadErr := make(chan error, 1)
+		go func() {
+			defer pw.Close()
+
+			var writer io.Writer = pw
+			if compress {
+				zipWriter, err := newStreamingZipWriter(pw, path)
+				if err != nil {
+					uploadErr <- err
+					return
+				}
+				defer zipWriter.Close()
+				writer = zipWriter
+			}
+
+			_, err := io.Copy(writer, reader)
+			if err != nil {
+				uploadErr <- err
+				return
+			}
+
+			uploadErr <- nil
+		}()
+
+		// Upload the streaming data
+		err = uploader.Upload(c.Context, uploadKey, pr, -1) // Use -1 for unknown size when compressing
 		if err != nil {
-			log.Error("Failed to upload file", "file", uploadPath, "error", err)
+			log.Error("Failed to upload file", "file", path, "error", err)
+			return err
+		}
+
+		// Check for any errors from the upload goroutine
+		if err := <-uploadErr; err != nil {
+			log.Error("Failed during streaming", "file", path, "error", err)
 			return err
 		}
 
