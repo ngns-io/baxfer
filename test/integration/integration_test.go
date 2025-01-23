@@ -1,9 +1,11 @@
 package integration
 
 import (
+	"archive/zip"
 	"bytes"
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"strings"
 	"testing"
@@ -170,6 +172,163 @@ func TestIntegration(t *testing.T) {
 			exists, err = uploader.FileExists(context.Background(), testKey)
 			assert.NoError(t, err)
 			assert.False(t, exists)
+
+			exists, err = uploader.FileExists(context.Background(), compressedKey)
+			assert.NoError(t, err)
+			assert.False(t, exists)
+		})
+	}
+}
+
+func TestStreamingCompression(t *testing.T) {
+	if os.Getenv("RUN_INTEGRATION_TESTS") != "true" {
+		t.Skip("Skipping integration tests")
+	}
+
+	log := setupLogger(t)
+	defer log.Close()
+
+	// Generate test data that will benefit from compression
+	testData := bytes.Repeat([]byte("CompressibleTestData "), 1000)
+
+	providers := []struct {
+		name            string
+		uploader        func() (storage.Uploader, error)
+		requiredEnvVars []string
+	}{
+		{
+			name: "S3",
+			uploader: func() (storage.Uploader, error) {
+				return storage.NewS3Uploader(os.Getenv("AWS_REGION"), os.Getenv("AWS_BUCKET"), log)
+			},
+			requiredEnvVars: []string{"AWS_REGION", "AWS_BUCKET", "AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY"},
+		},
+		{
+			name: "B2",
+			uploader: func() (storage.Uploader, error) {
+				return storage.NewB2Uploader(os.Getenv("B2_BUCKET"), log)
+			},
+			requiredEnvVars: []string{"B2_BUCKET", "B2_KEY_ID", "B2_APP_KEY"},
+		},
+		{
+			name: "B2S3",
+			uploader: func() (storage.Uploader, error) {
+				return storage.NewB2S3Uploader(os.Getenv("AWS_REGION"), os.Getenv("B2_BUCKET"), log)
+			},
+			requiredEnvVars: []string{"AWS_REGION", "B2_BUCKET", "B2_KEY_ID", "B2_APP_KEY"},
+		},
+		{
+			name: "R2",
+			uploader: func() (storage.Uploader, error) {
+				return storage.NewR2Uploader(os.Getenv("R2_BUCKET"), log)
+			},
+			requiredEnvVars: []string{"R2_BUCKET", "CF_ACCOUNT_ID", "CF_ACCESS_KEY_ID", "CF_ACCESS_KEY_SECRET"},
+		},
+		{
+			name: "SFTP",
+			uploader: func() (storage.Uploader, error) {
+				port := 22
+				if portStr := os.Getenv("SFTP_PORT"); portStr != "" {
+					fmt.Sscanf(portStr, "%d", &port)
+				}
+				return storage.NewSFTPUploader(
+					os.Getenv("SFTP_HOST"),
+					port,
+					os.Getenv("SFTP_USER"),
+					os.Getenv("SFTP_PATH"),
+					log,
+				)
+			},
+			requiredEnvVars: []string{"SFTP_HOST", "SFTP_USER", "SFTP_PATH"},
+		},
+	}
+
+	for _, provider := range providers {
+		t.Run(provider.name+"_StreamingCompression", func(t *testing.T) {
+			// Skip if required environment variables are not set
+			for _, env := range provider.requiredEnvVars {
+				if os.Getenv(env) == "" {
+					t.Skipf("Skipping %s tests: %s not set", provider.name, env)
+				}
+			}
+
+			// Additional check for SFTP authentication
+			if provider.name == "SFTP" {
+				if os.Getenv("SFTP_PRIVATE_KEY") == "" && os.Getenv("SFTP_PASSWORD") == "" {
+					t.Skip("Skipping SFTP tests: neither SFTP_PRIVATE_KEY nor SFTP_PASSWORD is set")
+				}
+			}
+
+			uploader, err := provider.uploader()
+			require.NoError(t, err)
+
+			if closer, ok := uploader.(interface{ Close() error }); ok {
+				defer closer.Close()
+			}
+
+			testKey := "test-streaming-" + provider.name + ".txt"
+			compressedKey := strings.TrimSuffix(testKey, ".txt") + ".zip"
+
+			// Test streaming compressed upload
+			pr, pw := io.Pipe()
+			uploadErr := make(chan error, 1)
+
+			go func() {
+				defer pw.Close()
+				zipWriter := zip.NewWriter(pw)
+				defer zipWriter.Close()
+
+				file, err := zipWriter.Create(strings.ReplaceAll(testKey, "\\", "/"))
+				if err != nil {
+					uploadErr <- err
+					return
+				}
+
+				_, err = io.Copy(file, bytes.NewReader(testData))
+				if err != nil {
+					uploadErr <- err
+					return
+				}
+
+				uploadErr <- nil
+			}()
+
+			err = uploader.Upload(context.Background(), compressedKey, pr, -1)
+			require.NoError(t, err)
+			require.NoError(t, <-uploadErr)
+
+			// Verify compressed file exists and size is smaller
+			exists, err := uploader.FileExists(context.Background(), compressedKey)
+			assert.NoError(t, err)
+			assert.True(t, exists)
+
+			compressedInfo, err := uploader.GetFileInfo(context.Background(), compressedKey)
+			assert.NoError(t, err)
+			assert.True(t, compressedInfo.Size > 0)
+			assert.True(t, compressedInfo.Size < int64(len(testData)),
+				"Compressed size should be smaller than original")
+
+			// Test downloading and extracting compressed content
+			var buf bytes.Buffer
+			err = uploader.Download(context.Background(), compressedKey, &buf)
+			assert.NoError(t, err)
+
+			// Verify zip contents
+			zipReader, err := zip.NewReader(bytes.NewReader(buf.Bytes()), int64(buf.Len()))
+			assert.NoError(t, err)
+			assert.Equal(t, 1, len(zipReader.File), "Zip should contain exactly one file")
+
+			rc, err := zipReader.File[0].Open()
+			assert.NoError(t, err)
+			defer rc.Close()
+
+			extractedData, err := io.ReadAll(rc)
+			assert.NoError(t, err)
+			assert.Equal(t, testData, extractedData, "Extracted data should match original")
+
+			// Cleanup
+			err = uploader.Delete(context.Background(), compressedKey)
+			assert.NoError(t, err)
 
 			exists, err = uploader.FileExists(context.Background(), compressedKey)
 			assert.NoError(t, err)
