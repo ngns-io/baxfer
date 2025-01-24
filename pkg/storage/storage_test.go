@@ -102,7 +102,7 @@ func TestUpload(t *testing.T) {
 		expectedSize int64
 	}{
 		{"Uncompressed", false, "test.bak", 9},
-		{"Compressed", true, "test.zip", 9}, // Size might vary, using original size for simplicity
+		{"Compressed", true, "test.zip", 9},
 	}
 
 	for _, tt := range tests {
@@ -111,7 +111,20 @@ func TestUpload(t *testing.T) {
 			mockLogger := NewMockLogger()
 
 			mockUploader.On("FileExists", mock.Anything, tt.expectedKey).Return(false, nil)
-			mockUploader.On("Upload", mock.Anything, tt.expectedKey, mock.AnythingOfType("*os.File"), mock.AnythingOfType("int64")).Return(nil)
+			mockUploader.On("Upload",
+				mock.Anything,
+				tt.expectedKey,
+				mock.MatchedBy(func(r interface{}) bool {
+					reader, ok := r.(io.Reader)
+					if !ok {
+						return false
+					}
+					// Consume the reader
+					_, err := io.Copy(io.Discard, reader)
+					return err == nil
+				}),
+				mock.AnythingOfType("int64"),
+			).Return(nil)
 			mockLogger.On("Info", mock.Anything, mock.Anything).Return()
 
 			app := &cli.App{}
