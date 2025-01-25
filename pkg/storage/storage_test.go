@@ -1,12 +1,13 @@
 package storage
 
 import (
+	"archive/zip"
+	"bytes"
 	"context"
 	"flag"
 	"io"
 	"os"
 	"path/filepath"
-	"strconv"
 	"testing"
 	"time"
 
@@ -96,19 +97,20 @@ func TestUpload(t *testing.T) {
 	assert.NoError(t, err)
 
 	tests := []struct {
-		name         string
-		compress     bool
-		expectedKey  string
-		expectedSize int64
+		name        string
+		compress    bool
+		expectedKey string
 	}{
-		{"Uncompressed", false, "test.bak", 9},
-		{"Compressed", true, "test.zip", 9},
+		{"Uncompressed", false, "test.bak"},
+		{"Compressed", true, "test.zip"},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			mockUploader := new(MockUploader)
 			mockLogger := NewMockLogger()
+
+			uploadedData := &bytes.Buffer{}
 
 			mockUploader.On("FileExists", mock.Anything, tt.expectedKey).Return(false, nil)
 			mockUploader.On("Upload",
@@ -119,12 +121,13 @@ func TestUpload(t *testing.T) {
 					if !ok {
 						return false
 					}
-					// Consume the reader
-					_, err := io.Copy(io.Discard, reader)
+					// Synchronously read all data
+					_, err := io.Copy(uploadedData, reader)
 					return err == nil
 				}),
 				mock.AnythingOfType("int64"),
 			).Return(nil)
+
 			mockLogger.On("Info", mock.Anything, mock.Anything).Return()
 
 			app := &cli.App{}
@@ -133,15 +136,22 @@ func TestUpload(t *testing.T) {
 			set.Bool("compress", tt.compress, "doc")
 			set.Bool("non-interactive", true, "doc")
 			ctx := cli.NewContext(app, set, nil)
-			ctx.Set("backupext", ".bak")
-			ctx.Set("compress", strconv.FormatBool(tt.compress))
-			ctx.Set("non-interactive", "true")
 
-			err = set.Parse([]string{tempDir})
+			err := set.Parse([]string{tempDir})
 			assert.NoError(t, err)
 
 			err = Upload(ctx, mockUploader, mockLogger)
 			assert.NoError(t, err)
+
+			if tt.compress {
+				// Verify uploaded data is a valid zip file
+				reader := bytes.NewReader(uploadedData.Bytes())
+				zipReader, err := zip.NewReader(reader, int64(uploadedData.Len()))
+				assert.NoError(t, err)
+				assert.Len(t, zipReader.File, 1)
+			} else {
+				assert.Equal(t, "test data", uploadedData.String())
+			}
 
 			mockUploader.AssertExpectations(t)
 			mockLogger.AssertExpectations(t)

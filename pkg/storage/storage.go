@@ -2,6 +2,7 @@ package storage
 
 import (
 	"archive/zip"
+	"bytes"
 	"context"
 	"io"
 	"os"
@@ -14,41 +15,40 @@ import (
 	"github.com/urfave/cli/v2"
 )
 
-// streamingZipWriter implements an io.Writer that creates a zip file on the fly
-type streamingZipWriter struct {
+// syncZipWriter handles streaming compression synchronously
+type syncZipWriter struct {
 	zipWriter *zip.Writer
-	writer    io.Writer
+	buffer    *bytes.Buffer
 }
 
-// newStreamingZipWriter creates a new streaming zip writer
-func newStreamingZipWriter(w io.Writer, fileName string) (*streamingZipWriter, error) {
-	zipW := zip.NewWriter(w)
+func newSyncZipWriter() *syncZipWriter {
+	buf := &bytes.Buffer{}
+	return &syncZipWriter{
+		zipWriter: zip.NewWriter(buf),
+		buffer:    buf,
+	}
+}
 
-	// Create a new file header
+func (w *syncZipWriter) compress(file *os.File, filename string) (io.Reader, error) {
 	header := &zip.FileHeader{
-		Name:   strings.ReplaceAll(filepath.Base(fileName), "\\", "/"), // Ensure Windows compatibility
+		Name:   filepath.Base(filename),
 		Method: zip.Deflate,
 	}
 
-	// Create the file in the zip
-	_, err := zipW.CreateHeader(header)
+	writer, err := w.zipWriter.CreateHeader(header)
 	if err != nil {
-		zipW.Close()
 		return nil, err
 	}
 
-	return &streamingZipWriter{
-		zipWriter: zipW,
-		writer:    w,
-	}, nil
-}
+	if _, err := io.Copy(writer, file); err != nil {
+		return nil, err
+	}
 
-func (w *streamingZipWriter) Write(p []byte) (int, error) {
-	return w.writer.Write(p)
-}
+	if err := w.zipWriter.Close(); err != nil {
+		return nil, err
+	}
 
-func (w *streamingZipWriter) Close() error {
-	return w.zipWriter.Close()
+	return bytes.NewReader(w.buffer.Bytes()), nil
 }
 
 type Uploader interface {
@@ -105,9 +105,10 @@ func Upload(c *cli.Context, uploader Uploader, log logger.Logger) error {
 			return err
 		}
 
+		compressedKey := strings.TrimSuffix(originalKey, filepath.Ext(originalKey)) + ".zip"
 		uploadKey := originalKey
 		if compress {
-			uploadKey = strings.TrimSuffix(originalKey, filepath.Ext(originalKey)) + ".zip"
+			uploadKey = compressedKey
 		}
 
 		eligible, err := fileUploadEligible(c.Context, uploader, uploadKey, info, log)
@@ -128,8 +129,21 @@ func Upload(c *cli.Context, uploader Uploader, log logger.Logger) error {
 		}
 		defer file.Close()
 
-		var reader io.Reader = file
-		uploadSize := info.Size()
+		var reader io.Reader
+		var uploadSize int64
+
+		if compress {
+			zipWriter := newSyncZipWriter()
+			reader, err = zipWriter.compress(file, path)
+			if err != nil {
+				log.Error("Failed to compress file", "file", path, "error", err)
+				return err
+			}
+			uploadSize = -1 // Unknown compressed size
+		} else {
+			reader = file
+			uploadSize = info.Size()
+		}
 
 		if !nonInteractive {
 			bar := progressbar.DefaultBytes(
@@ -139,44 +153,9 @@ func Upload(c *cli.Context, uploader Uploader, log logger.Logger) error {
 			reader = io.TeeReader(reader, bar)
 		}
 
-		// Create a pipe to stream data through
-		pr, pw := io.Pipe()
-
-		// Start a goroutine to handle the upload
-		uploadErr := make(chan error, 1)
-		go func() {
-			defer pw.Close()
-
-			var writer io.Writer = pw
-			if compress {
-				zipWriter, err := newStreamingZipWriter(pw, path)
-				if err != nil {
-					uploadErr <- err
-					return
-				}
-				defer zipWriter.Close()
-				writer = zipWriter
-			}
-
-			_, err := io.Copy(writer, reader)
-			if err != nil {
-				uploadErr <- err
-				return
-			}
-
-			uploadErr <- nil
-		}()
-
-		// Upload the streaming data
-		err = uploader.Upload(c.Context, uploadKey, pr, -1) // Use -1 for unknown size when compressing
+		err = uploader.Upload(c.Context, uploadKey, reader, uploadSize)
 		if err != nil {
 			log.Error("Failed to upload file", "file", path, "error", err)
-			return err
-		}
-
-		// Check for any errors from the upload goroutine
-		if err := <-uploadErr; err != nil {
-			log.Error("Failed during streaming", "file", path, "error", err)
 			return err
 		}
 
