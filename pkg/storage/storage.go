@@ -37,10 +37,12 @@ func (w *syncZipWriter) compress(file *os.File, filename string) (io.Reader, err
 
 	writer, err := w.zipWriter.CreateHeader(header)
 	if err != nil {
+		w.zipWriter.Close()
 		return nil, err
 	}
 
 	if _, err := io.Copy(writer, file); err != nil {
+		w.zipWriter.Close()
 		return nil, err
 	}
 
@@ -91,6 +93,13 @@ func Upload(c *cli.Context, uploader Uploader, log logger.Logger) error {
 	nonInteractive := c.Bool("non-interactive")
 
 	return filepath.Walk(rootDir, func(path string, info os.FileInfo, err error) error {
+		// Check for context cancellation
+		select {
+		case <-c.Context.Done():
+			return c.Context.Err()
+		default:
+		}
+
 		if err != nil {
 			return err
 		}

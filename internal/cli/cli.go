@@ -82,7 +82,10 @@ func NewApp() *cli.App {
 		},
 		After: func(c *cli.Context) error {
 			// Close logger
-			log := c.App.Metadata["logger"].(logger.Logger)
+			log, err := getLogger(c)
+			if err != nil {
+				return err
+			}
 			return log.Close()
 		},
 	}
@@ -90,7 +93,7 @@ func NewApp() *cli.App {
 }
 
 func newUploadCommand() *cli.Command {
-	return &cli.Command{
+	cmd := &cli.Command{
 		Name:      "upload",
 		Aliases:   []string{"u"},
 		Usage:     "Upload backup files to cloud storage",
@@ -133,31 +136,12 @@ func newUploadCommand() *cli.Command {
 				Aliases: []string{"c"},
 				Usage:   "Compress files before uploading",
 			},
-			// Add SFTP-specific flags:
-			&cli.StringFlag{
-				Name:    "sftp-host",
-				Usage:   "SFTP server hostname",
-				EnvVars: []string{"SFTP_HOST"},
-			},
-			&cli.IntFlag{
-				Name:    "sftp-port",
-				Usage:   "SFTP server port",
-				Value:   22,
-				EnvVars: []string{"SFTP_PORT"},
-			},
-			&cli.StringFlag{
-				Name:    "sftp-user",
-				Usage:   "SFTP username",
-				EnvVars: []string{"SFTP_USER"},
-			},
-			&cli.StringFlag{
-				Name:    "sftp-path",
-				Usage:   "Base path on SFTP server",
-				EnvVars: []string{"SFTP_PATH"},
-			},
 		},
 		Action: func(c *cli.Context) error {
-			log := c.App.Metadata["logger"].(logger.Logger)
+			log, err := getLogger(c)
+			if err != nil {
+				return cli.Exit(err.Error(), 1)
+			}
 			uploader, err := getUploader(c)
 			if err != nil {
 				return cli.Exit(err.Error(), 1)
@@ -165,10 +149,12 @@ func newUploadCommand() *cli.Command {
 			return storage.Upload(c, uploader, log)
 		},
 	}
+	cmd.Flags = append(cmd.Flags, sftpFlags()...)
+	return cmd
 }
 
 func newDownloadCommand() *cli.Command {
-	return &cli.Command{
+	cmd := &cli.Command{
 		Name:      "download",
 		Aliases:   []string{"d"},
 		Usage:     "Download backup files from cloud storage",
@@ -196,31 +182,12 @@ func newDownloadCommand() *cli.Command {
 				Aliases: []string{"o"},
 				Usage:   "Output file name",
 			},
-			// Add SFTP-specific flags:
-			&cli.StringFlag{
-				Name:    "sftp-host",
-				Usage:   "SFTP server hostname",
-				EnvVars: []string{"SFTP_HOST"},
-			},
-			&cli.IntFlag{
-				Name:    "sftp-port",
-				Usage:   "SFTP server port",
-				Value:   22,
-				EnvVars: []string{"SFTP_PORT"},
-			},
-			&cli.StringFlag{
-				Name:    "sftp-user",
-				Usage:   "SFTP username",
-				EnvVars: []string{"SFTP_USER"},
-			},
-			&cli.StringFlag{
-				Name:    "sftp-path",
-				Usage:   "Base path on SFTP server",
-				EnvVars: []string{"SFTP_PATH"},
-			},
 		},
 		Action: func(c *cli.Context) error {
-			log := c.App.Metadata["logger"].(logger.Logger)
+			log, err := getLogger(c)
+			if err != nil {
+				return cli.Exit(err.Error(), 1)
+			}
 			uploader, err := getUploader(c)
 			if err != nil {
 				return cli.Exit(err.Error(), 1)
@@ -239,10 +206,12 @@ func newDownloadCommand() *cli.Command {
 			return nil
 		},
 	}
+	cmd.Flags = append(cmd.Flags, sftpFlags()...)
+	return cmd
 }
 
 func newPruneCommand() *cli.Command {
-	return &cli.Command{
+	cmd := &cli.Command{
 		Name:    "prune",
 		Aliases: []string{"p"},
 		Usage:   "Remove old backup files from cloud storage",
@@ -275,31 +244,12 @@ func newPruneCommand() *cli.Command {
 				Usage:    "Age of files to prune (e.g., 720h for 30 days)",
 				Required: true,
 			},
-			// Add SFTP-specific flags:
-			&cli.StringFlag{
-				Name:    "sftp-host",
-				Usage:   "SFTP server hostname",
-				EnvVars: []string{"SFTP_HOST"},
-			},
-			&cli.IntFlag{
-				Name:    "sftp-port",
-				Usage:   "SFTP server port",
-				Value:   22,
-				EnvVars: []string{"SFTP_PORT"},
-			},
-			&cli.StringFlag{
-				Name:    "sftp-user",
-				Usage:   "SFTP username",
-				EnvVars: []string{"SFTP_USER"},
-			},
-			&cli.StringFlag{
-				Name:    "sftp-path",
-				Usage:   "Base path on SFTP server",
-				EnvVars: []string{"SFTP_PATH"},
-			},
 		},
 		Action: func(c *cli.Context) error {
-			log := c.App.Metadata["logger"].(logger.Logger)
+			log, err := getLogger(c)
+			if err != nil {
+				return cli.Exit(err.Error(), 1)
+			}
 			uploader, err := getUploader(c)
 			if err != nil {
 				return cli.Exit(err.Error(), 1)
@@ -307,12 +257,51 @@ func newPruneCommand() *cli.Command {
 			return storage.Prune(c, uploader, log)
 		},
 	}
+	cmd.Flags = append(cmd.Flags, sftpFlags()...)
+	return cmd
+}
+
+func sftpFlags() []cli.Flag {
+	return []cli.Flag{
+		&cli.StringFlag{
+			Name:    "sftp-host",
+			Usage:   "SFTP server hostname",
+			EnvVars: []string{"SFTP_HOST"},
+		},
+		&cli.IntFlag{
+			Name:    "sftp-port",
+			Usage:   "SFTP server port",
+			Value:   22,
+			EnvVars: []string{"SFTP_PORT"},
+		},
+		&cli.StringFlag{
+			Name:    "sftp-user",
+			Usage:   "SFTP username",
+			EnvVars: []string{"SFTP_USER"},
+		},
+		&cli.StringFlag{
+			Name:    "sftp-path",
+			Usage:   "Base path on SFTP server",
+			EnvVars: []string{"SFTP_PATH"},
+		},
+	}
+}
+
+func getLogger(c *cli.Context) (logger.Logger, error) {
+	log, ok := c.App.Metadata["logger"].(logger.Logger)
+	if !ok {
+		return nil, fmt.Errorf("logger not initialized")
+	}
+	return log, nil
 }
 
 func getUploader(c *cli.Context) (storage.Uploader, error) {
 	provider := c.String("provider")
 	bucket := c.String("bucket")
-	log := c.App.Metadata["logger"].(logger.Logger)
+	log, err := getLogger(c)
+	if err != nil {
+		return nil, err
+	}
 
 	switch provider {
 	case "s3":

@@ -36,7 +36,7 @@ func NewB2Uploader(bucket string, log logger.Logger) (*B2Uploader, error) {
 	return uploader, nil
 }
 
-func (u *B2Uploader) Upload(ctx context.Context, key string, reader io.Reader, size int64) error {
+func (u *B2Uploader) Upload(ctx context.Context, key string, reader io.Reader, size int64) (err error) {
 	b, err := u.client.Bucket(ctx, u.bucket)
 	if err != nil {
 		return err
@@ -44,7 +44,11 @@ func (u *B2Uploader) Upload(ctx context.Context, key string, reader io.Reader, s
 
 	w := b.Object(key).NewWriter(ctx)
 	w.ConcurrentUploads = 5 // Number of concurrent upload threads
-	defer w.Close()
+	defer func() {
+		if closeErr := w.Close(); closeErr != nil && err == nil {
+			err = fmt.Errorf("failed to close writer: %w", closeErr)
+		}
+	}()
 
 	_, err = io.Copy(w, reader)
 	return err

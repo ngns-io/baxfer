@@ -17,63 +17,45 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func setupLogger(t *testing.T) logger.Logger {
-	log, err := logger.New(logger.LogConfig{
-		Filename:     "integration_test.log",
-		MaxSize:      10,
-		MaxAge:       1,
-		MaxBackups:   1,
-		Compress:     false,
-		ClearOnStart: true,
-	}, false)
-	require.NoError(t, err)
-	return log
+type providerConfig struct {
+	name            string
+	uploader        func(log logger.Logger) (storage.Uploader, error)
+	requiredEnvVars []string
 }
 
-func TestIntegration(t *testing.T) {
-	if os.Getenv("RUN_INTEGRATION_TESTS") != "true" {
-		t.Skip("Skipping integration tests")
-	}
-
-	log := setupLogger(t)
-	defer log.Close()
-
-	providers := []struct {
-		name            string
-		uploader        func() (storage.Uploader, error)
-		requiredEnvVars []string
-	}{
+func getProviderConfigs() []providerConfig {
+	return []providerConfig{
 		{
 			name: "S3",
-			uploader: func() (storage.Uploader, error) {
+			uploader: func(log logger.Logger) (storage.Uploader, error) {
 				return storage.NewS3Uploader(os.Getenv("AWS_REGION"), os.Getenv("AWS_BUCKET"), log)
 			},
 			requiredEnvVars: []string{"AWS_REGION", "AWS_BUCKET", "AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY"},
 		},
 		{
 			name: "B2",
-			uploader: func() (storage.Uploader, error) {
+			uploader: func(log logger.Logger) (storage.Uploader, error) {
 				return storage.NewB2Uploader(os.Getenv("B2_BUCKET"), log)
 			},
 			requiredEnvVars: []string{"B2_BUCKET", "B2_KEY_ID", "B2_APP_KEY"},
 		},
 		{
 			name: "B2S3",
-			uploader: func() (storage.Uploader, error) {
+			uploader: func(log logger.Logger) (storage.Uploader, error) {
 				return storage.NewB2S3Uploader(os.Getenv("AWS_REGION"), os.Getenv("B2_BUCKET"), log)
 			},
 			requiredEnvVars: []string{"AWS_REGION", "B2_BUCKET", "B2_KEY_ID", "B2_APP_KEY"},
 		},
 		{
 			name: "R2",
-			uploader: func() (storage.Uploader, error) {
+			uploader: func(log logger.Logger) (storage.Uploader, error) {
 				return storage.NewR2Uploader(os.Getenv("R2_BUCKET"), log)
 			},
 			requiredEnvVars: []string{"R2_BUCKET", "CF_ACCOUNT_ID", "CF_ACCESS_KEY_ID", "CF_ACCESS_KEY_SECRET"},
 		},
 		{
 			name: "SFTP",
-			uploader: func() (storage.Uploader, error) {
+			uploader: func(log logger.Logger) (storage.Uploader, error) {
 				port := 22
 				if portStr := os.Getenv("SFTP_PORT"); portStr != "" {
 					fmt.Sscanf(portStr, "%d", &port)
@@ -89,24 +71,48 @@ func TestIntegration(t *testing.T) {
 			requiredEnvVars: []string{"SFTP_HOST", "SFTP_USER", "SFTP_PATH"},
 		},
 	}
+}
 
-	for _, provider := range providers {
+func setupLogger(t *testing.T) logger.Logger {
+	log, err := logger.New(logger.LogConfig{
+		Filename:     "integration_test.log",
+		MaxSize:      10,
+		MaxAge:       1,
+		MaxBackups:   1,
+		Compress:     false,
+		ClearOnStart: true,
+	}, false)
+	require.NoError(t, err)
+	return log
+}
+
+func skipIfMissingEnvVars(t *testing.T, provider providerConfig) {
+	for _, env := range provider.requiredEnvVars {
+		if os.Getenv(env) == "" {
+			t.Skipf("Skipping %s tests: %s not set", provider.name, env)
+		}
+	}
+
+	if provider.name == "SFTP" {
+		if os.Getenv("SFTP_PRIVATE_KEY") == "" && os.Getenv("SFTP_PASSWORD") == "" {
+			t.Skip("Skipping SFTP tests: neither SFTP_PRIVATE_KEY nor SFTP_PASSWORD is set")
+		}
+	}
+}
+
+func TestIntegration(t *testing.T) {
+	if os.Getenv("RUN_INTEGRATION_TESTS") != "true" {
+		t.Skip("Skipping integration tests")
+	}
+
+	log := setupLogger(t)
+	defer log.Close()
+
+	for _, provider := range getProviderConfigs() {
 		t.Run(provider.name, func(t *testing.T) {
-			// Skip if required environment variables are not set
-			for _, env := range provider.requiredEnvVars {
-				if os.Getenv(env) == "" {
-					t.Skipf("Skipping %s tests: %s not set", provider.name, env)
-				}
-			}
+			skipIfMissingEnvVars(t, provider)
 
-			// Additional check for SFTP authentication
-			if provider.name == "SFTP" {
-				if os.Getenv("SFTP_PRIVATE_KEY") == "" && os.Getenv("SFTP_PASSWORD") == "" {
-					t.Skip("Skipping SFTP tests: neither SFTP_PRIVATE_KEY nor SFTP_PASSWORD is set")
-				}
-			}
-
-			uploader, err := provider.uploader()
+			uploader, err := provider.uploader(log)
 			require.NoError(t, err)
 
 			// Close the SFTP connection after tests if applicable
@@ -191,75 +197,11 @@ func TestStreamingCompression(t *testing.T) {
 	// Generate test data that will benefit from compression
 	testData := bytes.Repeat([]byte("CompressibleTestData "), 1000)
 
-	providers := []struct {
-		name            string
-		uploader        func() (storage.Uploader, error)
-		requiredEnvVars []string
-	}{
-		{
-			name: "S3",
-			uploader: func() (storage.Uploader, error) {
-				return storage.NewS3Uploader(os.Getenv("AWS_REGION"), os.Getenv("AWS_BUCKET"), log)
-			},
-			requiredEnvVars: []string{"AWS_REGION", "AWS_BUCKET", "AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY"},
-		},
-		{
-			name: "B2",
-			uploader: func() (storage.Uploader, error) {
-				return storage.NewB2Uploader(os.Getenv("B2_BUCKET"), log)
-			},
-			requiredEnvVars: []string{"B2_BUCKET", "B2_KEY_ID", "B2_APP_KEY"},
-		},
-		{
-			name: "B2S3",
-			uploader: func() (storage.Uploader, error) {
-				return storage.NewB2S3Uploader(os.Getenv("AWS_REGION"), os.Getenv("B2_BUCKET"), log)
-			},
-			requiredEnvVars: []string{"AWS_REGION", "B2_BUCKET", "B2_KEY_ID", "B2_APP_KEY"},
-		},
-		{
-			name: "R2",
-			uploader: func() (storage.Uploader, error) {
-				return storage.NewR2Uploader(os.Getenv("R2_BUCKET"), log)
-			},
-			requiredEnvVars: []string{"R2_BUCKET", "CF_ACCOUNT_ID", "CF_ACCESS_KEY_ID", "CF_ACCESS_KEY_SECRET"},
-		},
-		{
-			name: "SFTP",
-			uploader: func() (storage.Uploader, error) {
-				port := 22
-				if portStr := os.Getenv("SFTP_PORT"); portStr != "" {
-					fmt.Sscanf(portStr, "%d", &port)
-				}
-				return storage.NewSFTPUploader(
-					os.Getenv("SFTP_HOST"),
-					port,
-					os.Getenv("SFTP_USER"),
-					os.Getenv("SFTP_PATH"),
-					log,
-				)
-			},
-			requiredEnvVars: []string{"SFTP_HOST", "SFTP_USER", "SFTP_PATH"},
-		},
-	}
-
-	for _, provider := range providers {
+	for _, provider := range getProviderConfigs() {
 		t.Run(provider.name+"_StreamingCompression", func(t *testing.T) {
-			// Skip if required environment variables are not set
-			for _, env := range provider.requiredEnvVars {
-				if os.Getenv(env) == "" {
-					t.Skipf("Skipping %s tests: %s not set", provider.name, env)
-				}
-			}
+			skipIfMissingEnvVars(t, provider)
 
-			// Additional check for SFTP authentication
-			if provider.name == "SFTP" {
-				if os.Getenv("SFTP_PRIVATE_KEY") == "" && os.Getenv("SFTP_PASSWORD") == "" {
-					t.Skip("Skipping SFTP tests: neither SFTP_PRIVATE_KEY nor SFTP_PASSWORD is set")
-				}
-			}
-
-			uploader, err := provider.uploader()
+			uploader, err := provider.uploader(log)
 			require.NoError(t, err)
 
 			if closer, ok := uploader.(interface{ Close() error }); ok {

@@ -17,9 +17,7 @@ import (
 )
 
 type R2Uploader struct {
-	client *s3.Client
-	bucket string
-	log    logger.Logger
+	*S3CompatibleUploader
 }
 
 func NewR2Uploader(bucket string, log logger.Logger) (*R2Uploader, error) {
@@ -49,9 +47,14 @@ func NewR2Uploader(bucket string, log logger.Logger) (*R2Uploader, error) {
 	})
 
 	uploader := &R2Uploader{
-		client: client,
-		bucket: bucket,
-		log:    log,
+		S3CompatibleUploader: NewS3CompatibleUploader(
+			client,
+			bucket,
+			"r2",
+			log,
+			100*1024*1024, // 100MB part size
+			5,             // concurrency
+		),
 	}
 
 	log.Info("Initialized storage provider",
@@ -64,80 +67,31 @@ func NewR2Uploader(bucket string, log logger.Logger) (*R2Uploader, error) {
 
 func (u *R2Uploader) Upload(ctx context.Context, key string, reader io.Reader, size int64) error {
 	input := &s3.PutObjectInput{
-		Bucket:        &u.bucket,
+		Bucket:        &u.Bucket,
 		Key:           &key,
 		Body:          reader,
 		ContentLength: aws.Int64(size),
 	}
 
 	// Force path-style addressing for R2
-	_, err := u.client.PutObject(ctx, input, func(o *s3.Options) {
+	_, err := u.Client.PutObject(ctx, input, func(o *s3.Options) {
 		o.UsePathStyle = true
 	})
 	return err
 }
 
-func (u *R2Uploader) Download(ctx context.Context, key string, writer io.Writer) error {
-	output, err := u.client.GetObject(ctx, &s3.GetObjectInput{
-		Bucket: &u.bucket,
-		Key:    &key,
-	})
-	if err != nil {
-		return formatDownloadError("r2", key, err)
-	}
-	defer output.Body.Close()
-
-	_, err = io.Copy(writer, output.Body)
-	if err != nil {
-		return &UserError{
-			Message: fmt.Sprintf("Error reading file content: %s", key),
-			Cause:   err,
-		}
-	}
-	return nil
-}
-
-func (u *R2Uploader) List(ctx context.Context, prefix string) ([]string, error) {
-	var keys []string
-	paginator := s3.NewListObjectsV2Paginator(u.client, &s3.ListObjectsV2Input{
-		Bucket: &u.bucket,
-		Prefix: &prefix,
-	})
-
-	for paginator.HasMorePages() {
-		page, err := paginator.NextPage(ctx)
-		if err != nil {
-			return nil, err
-		}
-		for _, obj := range page.Contents {
-			keys = append(keys, *obj.Key)
-		}
-	}
-
-	return keys, nil
-}
-
-func (u *R2Uploader) Delete(ctx context.Context, key string) error {
-	_, err := u.client.DeleteObject(ctx, &s3.DeleteObjectInput{
-		Bucket: &u.bucket,
-		Key:    &key,
-	})
-	return err
-}
-
+// FileExists overrides the base implementation with R2-specific error handling
 func (u *R2Uploader) FileExists(ctx context.Context, key string) (bool, error) {
-	_, err := u.client.HeadObject(ctx, &s3.HeadObjectInput{
-		Bucket: &u.bucket,
+	_, err := u.Client.HeadObject(ctx, &s3.HeadObjectInput{
+		Bucket: &u.Bucket,
 		Key:    &key,
 	})
 	if err != nil {
-		// Log the raw error for debugging
-		u.log.Debug("HeadObject error details",
+		u.Log.Debug("HeadObject error details",
 			"error", err,
-			"bucket", u.bucket,
+			"bucket", u.Bucket,
 			"key", key)
 
-		// Check for any type of "not found" response
 		var (
 			nsk      *types.NoSuchKey
 			notFound *types.NotFound
@@ -153,29 +107,13 @@ func (u *R2Uploader) FileExists(ctx context.Context, key string) (bool, error) {
 		// For R2-specific errors, check the status code
 		if strings.Contains(err.Error(), "StatusCode: 411") ||
 			strings.Contains(err.Error(), "MissingContentLength") {
-			// Log this unexpected condition
-			u.log.Warn("Unexpected 411 error from R2 HeadObject",
-				"bucket", u.bucket,
+			u.Log.Warn("Unexpected 411 error from R2 HeadObject",
+				"bucket", u.Bucket,
 				"key", key)
-			return false, nil // Assume file doesn't exist
+			return false, nil
 		}
 
 		return false, fmt.Errorf("error checking if file exists: %w", err)
 	}
 	return true, nil
-}
-
-func (u *R2Uploader) GetFileInfo(ctx context.Context, key string) (*FileInfo, error) {
-	output, err := u.client.HeadObject(ctx, &s3.HeadObjectInput{
-		Bucket: &u.bucket,
-		Key:    &key,
-	})
-	if err != nil {
-		return nil, err
-	}
-
-	return &FileInfo{
-		LastModified: *output.LastModified,
-		Size:         *output.ContentLength,
-	}, nil
 }

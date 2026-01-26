@@ -4,6 +4,7 @@ import (
 	"archive/zip"
 	"bytes"
 	"context"
+	"errors"
 	"flag"
 	"io"
 	"os"
@@ -11,16 +12,14 @@ import (
 	"testing"
 	"time"
 
-	"github.com/ngns-io/baxfer/pkg/logger"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/urfave/cli/v2"
 )
 
-// MockLogger is a mock implementation of the logger.Logger
+// MockLogger is a mock implementation of the logger.Logger interface
 type MockLogger struct {
 	mock.Mock
-	logger.Logger
 }
 
 func NewMockLogger() *MockLogger {
@@ -309,3 +308,118 @@ func (m *mockFileInfo) Mode() os.FileMode  { return m.mode }
 func (m *mockFileInfo) ModTime() time.Time { return m.modTime }
 func (m *mockFileInfo) IsDir() bool        { return m.isDir }
 func (m *mockFileInfo) Sys() interface{}   { return m.sys }
+
+// Error path tests
+
+func TestFileUploadEligible_FileExistsError(t *testing.T) {
+	mockUploader := new(MockUploader)
+	mockLogger := NewMockLogger()
+
+	expectedErr := errors.New("network error")
+	mockUploader.On("FileExists", mock.Anything, "test.bak").Return(false, expectedErr)
+	mockLogger.On("Error", mock.Anything, mock.Anything).Return()
+
+	eligible, err := fileUploadEligible(context.Background(), mockUploader, "test.bak", &mockFileInfo{}, mockLogger)
+	assert.Error(t, err)
+	assert.False(t, eligible)
+	assert.Equal(t, expectedErr, err)
+
+	mockUploader.AssertExpectations(t)
+}
+
+func TestFileUploadEligible_GetFileInfoError(t *testing.T) {
+	mockUploader := new(MockUploader)
+	mockLogger := NewMockLogger()
+
+	expectedErr := errors.New("permission denied")
+	mockUploader.On("FileExists", mock.Anything, "test.bak").Return(true, nil)
+	mockUploader.On("GetFileInfo", mock.Anything, "test.bak").Return((*FileInfo)(nil), expectedErr)
+	mockLogger.On("Error", mock.Anything, mock.Anything).Return()
+
+	eligible, err := fileUploadEligible(context.Background(), mockUploader, "test.bak", &mockFileInfo{}, mockLogger)
+	assert.Error(t, err)
+	assert.False(t, eligible)
+	assert.Equal(t, expectedErr, err)
+
+	mockUploader.AssertExpectations(t)
+}
+
+func TestUpload_ContextCancellation(t *testing.T) {
+	tempDir, err := os.MkdirTemp("", "baxfer-test")
+	assert.NoError(t, err)
+	defer os.RemoveAll(tempDir)
+
+	// Create multiple test files
+	for i := 0; i < 3; i++ {
+		testFile := filepath.Join(tempDir, "test"+string(rune('0'+i))+".bak")
+		err = os.WriteFile(testFile, []byte("test data"), 0644)
+		assert.NoError(t, err)
+	}
+
+	mockUploader := new(MockUploader)
+	mockLogger := NewMockLogger()
+
+	// Setup canceled context
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel() // Cancel immediately
+
+	app := &cli.App{}
+	set := flag.NewFlagSet("test", 0)
+	set.String("backupext", ".bak", "doc")
+	set.Bool("compress", false, "doc")
+	set.Bool("non-interactive", true, "doc")
+	cliCtx := cli.NewContext(app, set, nil)
+
+	// Override context
+	cliCtx.Context = ctx
+
+	err = set.Parse([]string{tempDir})
+	assert.NoError(t, err)
+
+	err = Upload(cliCtx, mockUploader, mockLogger)
+	assert.Error(t, err)
+	assert.Equal(t, context.Canceled, err)
+}
+
+func TestPrune_ListError(t *testing.T) {
+	mockUploader := new(MockUploader)
+	mockLogger := NewMockLogger()
+
+	app := &cli.App{}
+	set := flag.NewFlagSet("test", 0)
+	set.String("age", "24h", "doc")
+	ctx := cli.NewContext(app, set, nil)
+	ctx.Set("age", "24h")
+
+	expectedErr := errors.New("list failed")
+	mockUploader.On("List", mock.Anything, "").Return([]string{}, expectedErr)
+	mockLogger.On("Error", mock.Anything, mock.Anything).Return()
+
+	err := Prune(ctx, mockUploader, mockLogger)
+	assert.Error(t, err)
+	assert.Equal(t, expectedErr, err)
+
+	mockUploader.AssertExpectations(t)
+}
+
+func TestPrune_DeleteError(t *testing.T) {
+	mockUploader := new(MockUploader)
+	mockLogger := NewMockLogger()
+
+	app := &cli.App{}
+	set := flag.NewFlagSet("test", 0)
+	set.String("age", "24h", "doc")
+	ctx := cli.NewContext(app, set, nil)
+	ctx.Set("age", "24h")
+
+	oldFiles := []string{"old1.bak"}
+	mockUploader.On("List", mock.Anything, "").Return(oldFiles, nil)
+	mockUploader.On("GetFileInfo", mock.Anything, "old1.bak").Return(&FileInfo{LastModified: time.Now().Add(-48 * time.Hour)}, nil)
+	mockUploader.On("Delete", mock.Anything, "old1.bak").Return(errors.New("delete failed"))
+	mockLogger.On("Error", mock.Anything, mock.Anything).Return()
+
+	err := Prune(ctx, mockUploader, mockLogger)
+	assert.NoError(t, err) // Prune continues on delete errors
+
+	mockUploader.AssertExpectations(t)
+}

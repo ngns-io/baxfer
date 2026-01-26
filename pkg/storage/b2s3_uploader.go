@@ -2,25 +2,19 @@ package storage
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"io"
 	"os"
-	"strings"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/credentials"
-	"github.com/aws/aws-sdk-go-v2/feature/s3/manager"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
-	"github.com/aws/aws-sdk-go-v2/service/s3/types"
 	"github.com/ngns-io/baxfer/pkg/logger"
 )
 
 type B2S3Uploader struct {
-	client *s3.Client
-	bucket string
-	log    logger.Logger
+	*S3CompatibleUploader
 }
 
 func NewB2S3Uploader(region, bucket string, log logger.Logger) (*B2S3Uploader, error) {
@@ -56,12 +50,16 @@ func NewB2S3Uploader(region, bucket string, log logger.Logger) (*B2S3Uploader, e
 	})
 
 	uploader := &B2S3Uploader{
-		client: client,
-		bucket: bucket,
-		log:    log,
+		S3CompatibleUploader: NewS3CompatibleUploader(
+			client,
+			bucket,
+			"b2s3",
+			log,
+			100*1024*1024, // 100MB part size
+			5,             // concurrency
+		),
 	}
 
-	// Log the provider initialization
 	log.Info("Initialized storage provider",
 		"provider", "Backblaze B2 S3",
 		"region", region,
@@ -71,108 +69,13 @@ func NewB2S3Uploader(region, bucket string, log logger.Logger) (*B2S3Uploader, e
 }
 
 func (u *B2S3Uploader) Upload(ctx context.Context, key string, reader io.Reader, size int64) error {
-	uploader := manager.NewUploader(u.client, func(u *manager.Uploader) {
-		u.PartSize = 100 * 1024 * 1024 // 100MB part size
-		u.Concurrency = 5              // Number of concurrent uploads
-	})
-
 	input := &s3.PutObjectInput{
-		Bucket:        &u.bucket,
+		Bucket:        &u.Bucket,
 		Key:           &key,
 		Body:          reader,
 		ContentLength: aws.Int64(size),
 	}
 
-	_, err := uploader.Upload(ctx, input, func(u *manager.Uploader) {
-		u.ClientOptions = append(u.ClientOptions, func(o *s3.Options) {
-			o.UsePathStyle = true
-		})
-	})
-
+	_, err := u.Uploader.Upload(ctx, input)
 	return err
-}
-
-func (u *B2S3Uploader) Download(ctx context.Context, key string, writer io.Writer) error {
-	output, err := u.client.GetObject(ctx, &s3.GetObjectInput{
-		Bucket: &u.bucket,
-		Key:    &key,
-	})
-	if err != nil {
-		return formatDownloadError("b2s3", key, err)
-	}
-	defer output.Body.Close()
-
-	_, err = io.Copy(writer, output.Body)
-	if err != nil {
-		return &UserError{
-			Message: fmt.Sprintf("Error reading file content: %s", key),
-			Cause:   err,
-		}
-	}
-	return nil
-}
-
-func (u *B2S3Uploader) List(ctx context.Context, prefix string) ([]string, error) {
-	var keys []string
-	paginator := s3.NewListObjectsV2Paginator(u.client, &s3.ListObjectsV2Input{
-		Bucket: &u.bucket,
-		Prefix: &prefix,
-	})
-
-	for paginator.HasMorePages() {
-		page, err := paginator.NextPage(ctx)
-		if err != nil {
-			return nil, err
-		}
-		for _, obj := range page.Contents {
-			keys = append(keys, *obj.Key)
-		}
-	}
-
-	return keys, nil
-}
-
-func (u *B2S3Uploader) Delete(ctx context.Context, key string) error {
-	_, err := u.client.DeleteObject(ctx, &s3.DeleteObjectInput{
-		Bucket: &u.bucket,
-		Key:    &key,
-	})
-	return err
-}
-
-func (u *B2S3Uploader) FileExists(ctx context.Context, key string) (bool, error) {
-	_, err := u.client.HeadObject(ctx, &s3.HeadObjectInput{
-		Bucket: &u.bucket,
-		Key:    &key,
-	})
-	if err != nil {
-		// Check for various forms of "not found" errors
-		var (
-			nsk      *types.NoSuchKey
-			notFound *types.NotFound
-		)
-		if errors.As(err, &nsk) ||
-			errors.As(err, &notFound) ||
-			strings.Contains(err.Error(), "NotFound") ||
-			strings.Contains(err.Error(), "status code: 404") {
-			return false, nil
-		}
-		return false, err
-	}
-	return true, nil
-}
-
-func (u *B2S3Uploader) GetFileInfo(ctx context.Context, key string) (*FileInfo, error) {
-	output, err := u.client.HeadObject(ctx, &s3.HeadObjectInput{
-		Bucket: &u.bucket,
-		Key:    &key,
-	})
-	if err != nil {
-		return nil, err
-	}
-
-	return &FileInfo{
-		LastModified: *output.LastModified,
-		Size:         *output.ContentLength,
-	}, nil
 }

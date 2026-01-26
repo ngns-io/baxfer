@@ -100,5 +100,5 @@ func (l *ZapLogger) Debug(msg string, keysAndValues ...interface{}) {
 
 func (l *ZapLogger) Fatal(msg string, keysAndValues ...interface{}) {
 	l.SugaredLogger.Fatalw(msg, keysAndValues...)
-	os.Exit(1)
+	// Note: Fatalw already calls os.Exit(1), no need for explicit exit
 }

@@ -2,6 +2,7 @@ package storage
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -70,8 +71,10 @@ func NewSFTPUploader(host string, port int, username, basePath string, log logge
 
 	// Create base directory if it doesn't exist
 	if err := sftpClient.MkdirAll(basePath); err != nil {
-		sftpClient.Close()
-		sshClient.Close()
+		cleanupErr := errors.Join(sftpClient.Close(), sshClient.Close())
+		if cleanupErr != nil {
+			return nil, fmt.Errorf("failed to create base directory: %v (cleanup error: %v)", err, cleanupErr)
+		}
 		return nil, fmt.Errorf("failed to create base directory: %v", err)
 	}
 
@@ -93,6 +96,10 @@ func NewSFTPUploader(host string, port int, username, basePath string, log logge
 }
 
 func (u *SFTPUploader) Upload(ctx context.Context, key string, reader io.Reader, size int64) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+
 	fullPath := filepath.Join(u.basePath, key)
 	dir := filepath.Dir(fullPath)
 
@@ -114,6 +121,10 @@ func (u *SFTPUploader) Upload(ctx context.Context, key string, reader io.Reader,
 }
 
 func (u *SFTPUploader) Download(ctx context.Context, key string, writer io.Writer) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+
 	fullPath := filepath.Join(u.basePath, key)
 
 	srcFile, err := u.client.Open(fullPath)
@@ -156,11 +167,19 @@ func (u *SFTPUploader) Download(ctx context.Context, key string, writer io.Write
 }
 
 func (u *SFTPUploader) List(ctx context.Context, prefix string) ([]string, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+
 	searchPath := filepath.Join(u.basePath, prefix)
 	var keys []string
 
 	walker := u.client.Walk(searchPath)
 	for walker.Step() {
+		// Check for context cancellation during walk
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
 		if err := walker.Err(); err != nil {
 			return nil, fmt.Errorf("error walking directory: %v", err)
 		}
@@ -180,11 +199,19 @@ func (u *SFTPUploader) List(ctx context.Context, prefix string) ([]string, error
 }
 
 func (u *SFTPUploader) Delete(ctx context.Context, key string) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+
 	fullPath := filepath.Join(u.basePath, key)
 	return u.client.Remove(fullPath)
 }
 
 func (u *SFTPUploader) FileExists(ctx context.Context, key string) (bool, error) {
+	if err := ctx.Err(); err != nil {
+		return false, err
+	}
+
 	fullPath := filepath.Join(u.basePath, key)
 	_, err := u.client.Stat(fullPath)
 	if err != nil {
@@ -197,6 +224,10 @@ func (u *SFTPUploader) FileExists(ctx context.Context, key string) (bool, error)
 }
 
 func (u *SFTPUploader) GetFileInfo(ctx context.Context, key string) (*FileInfo, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+
 	fullPath := filepath.Join(u.basePath, key)
 	stat, err := u.client.Stat(fullPath)
 	if err != nil {
@@ -210,9 +241,5 @@ func (u *SFTPUploader) GetFileInfo(ctx context.Context, key string) (*FileInfo, 
 }
 
 func (u *SFTPUploader) Close() error {
-	if err := u.client.Close(); err != nil {
-		u.sshClient.Close()
-		return err
-	}
-	return u.sshClient.Close()
+	return errors.Join(u.client.Close(), u.sshClient.Close())
 }

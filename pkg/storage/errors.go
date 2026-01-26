@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
+	"github.com/aws/smithy-go"
 )
 
 // UserError represents a user-friendly error message
@@ -22,6 +23,45 @@ func (e *UserError) Unwrap() error {
 	return e.Cause
 }
 
+// isNotFoundError checks if the error represents a "not found" condition using proper type assertions
+func isNotFoundError(err error) bool {
+	var (
+		nsk      *types.NoSuchKey
+		notFound *types.NotFound
+		apiErr   smithy.APIError
+	)
+
+	if errors.As(err, &nsk) || errors.As(err, &notFound) {
+		return true
+	}
+
+	if errors.As(err, &apiErr) {
+		code := apiErr.ErrorCode()
+		if code == "NoSuchKey" || code == "NotFound" || code == "404" {
+			return true
+		}
+	}
+
+	// Fallback to string matching for edge cases
+	return strings.Contains(err.Error(), "status code: 404") ||
+		strings.Contains(err.Error(), "StatusCode: 404")
+}
+
+// isAccessDeniedError checks if the error represents an access denied condition
+func isAccessDeniedError(err error) bool {
+	var apiErr smithy.APIError
+	if errors.As(err, &apiErr) {
+		code := apiErr.ErrorCode()
+		if code == "AccessDenied" || code == "Forbidden" || code == "403" {
+			return true
+		}
+	}
+
+	// Fallback to string matching
+	return strings.Contains(strings.ToLower(err.Error()), "access denied") ||
+		strings.Contains(err.Error(), "status code: 403")
+}
+
 // formatDownloadError converts provider-specific errors into user-friendly messages
 func formatDownloadError(provider, key string, err error) error {
 	if err == nil {
@@ -29,14 +69,7 @@ func formatDownloadError(provider, key string, err error) error {
 	}
 
 	// Common error handling for S3-compatible services (S3, R2, B2S3)
-	var (
-		nsk      *types.NoSuchKey
-		notFound *types.NotFound
-	)
-	if errors.As(err, &nsk) || errors.As(err, &notFound) ||
-		strings.Contains(err.Error(), "NoSuchKey") ||
-		strings.Contains(err.Error(), "status code: 404") ||
-		strings.Contains(err.Error(), "StatusCode: 404") {
+	if isNotFoundError(err) {
 		return &UserError{
 			Message: fmt.Sprintf("File not found: %s", key),
 			Cause:   err,
@@ -44,8 +77,7 @@ func formatDownloadError(provider, key string, err error) error {
 	}
 
 	// Check for access denied errors
-	if strings.Contains(strings.ToLower(err.Error()), "access denied") ||
-		strings.Contains(err.Error(), "status code: 403") {
+	if isAccessDeniedError(err) {
 		return &UserError{
 			Message: fmt.Sprintf("Access denied to file: %s. Please check your credentials and permissions.", key),
 			Cause:   err,
