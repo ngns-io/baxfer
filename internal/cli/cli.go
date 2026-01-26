@@ -115,10 +115,9 @@ func newUploadCommand() *cli.Command {
 				Usage:   "AWS region (for S3 and b2s3 only)",
 			},
 			&cli.StringFlag{
-				Name:     "bucket",
-				Aliases:  []string{"b"},
-				Usage:    "Storage bucket name",
-				Required: true,
+				Name:    "bucket",
+				Aliases: []string{"b"},
+				Usage:   "Storage bucket name (required for s3, b2, b2s3, r2)",
 			},
 			&cli.StringFlag{
 				Name:    "keyprefix",
@@ -172,10 +171,9 @@ func newDownloadCommand() *cli.Command {
 				Usage:   "AWS region (for S3 and b2s3 only)",
 			},
 			&cli.StringFlag{
-				Name:     "bucket",
-				Aliases:  []string{"b"},
-				Usage:    "Storage bucket name",
-				Required: true,
+				Name:    "bucket",
+				Aliases: []string{"b"},
+				Usage:   "Storage bucket name (required for s3, b2, b2s3, r2)",
 			},
 			&cli.StringFlag{
 				Name:    "output",
@@ -228,10 +226,9 @@ func newPruneCommand() *cli.Command {
 				Usage:   "AWS region (for S3 and b2s3 only)",
 			},
 			&cli.StringFlag{
-				Name:     "bucket",
-				Aliases:  []string{"b"},
-				Usage:    "Storage bucket name",
-				Required: true,
+				Name:    "bucket",
+				Aliases: []string{"b"},
+				Usage:   "Storage bucket name (required for s3, b2, b2s3, r2)",
 			},
 			&cli.StringFlag{
 				Name:    "keyprefix",
@@ -305,14 +302,26 @@ func getUploader(c *cli.Context) (storage.Uploader, error) {
 
 	switch provider {
 	case "s3":
+		if bucket == "" {
+			return nil, fmt.Errorf("bucket is required for s3 provider")
+		}
 		region := c.String("region")
 		return storage.NewS3Uploader(region, bucket, log)
 	case "b2":
+		if bucket == "" {
+			return nil, fmt.Errorf("bucket is required for b2 provider")
+		}
 		return storage.NewB2Uploader(bucket, log)
 	case "b2s3":
+		if bucket == "" {
+			return nil, fmt.Errorf("bucket is required for b2s3 provider")
+		}
 		region := c.String("region")
 		return storage.NewB2S3Uploader(region, bucket, log)
 	case "r2":
+		if bucket == "" {
+			return nil, fmt.Errorf("bucket is required for r2 provider")
+		}
 		return storage.NewR2Uploader(bucket, log)
 	case "sftp":
 		host := c.String("sftp-host")
@@ -320,7 +329,7 @@ func getUploader(c *cli.Context) (storage.Uploader, error) {
 		user := c.String("sftp-user")
 		path := c.String("sftp-path")
 		if host == "" || user == "" || path == "" {
-			return nil, fmt.Errorf("SFTP provider requires host, user, and path")
+			return nil, fmt.Errorf("SFTP provider requires --sftp-host, --sftp-user, and --sftp-path")
 		}
 		return storage.NewSFTPUploader(host, port, user, path, log)
 	default:

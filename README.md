@@ -11,33 +11,32 @@ No warranty is provided, either expressed or implied. The authors and contributo
 ## Table of Contents
 
 - [Baxfer](#baxfer)
-- [⚠️ Important Notice](#️-important-notice)
-  - [Table of Contents](#table-of-contents)
-  - [Features](#features)
-  - [Installation](#installation)
-    - [Pre-built Binaries](#pre-built-binaries)
-    - [Using Go](#using-go)
-  - [Usage](#usage)
-    - [Upload](#upload)
-    - [Download](#download)
-    - [Prune](#prune)
-  - [CLI Usage Examples](#cli-usage-examples)
-    - [Linux Examples](#linux-examples)
-    - [Windows Examples](#windows-examples)
-    - [General Notes](#general-notes)
-  - [Logging Usage](#logging-usage)
-  - [Amazon S3 Configuration](#amazon-s3-configuration)
-  - [Backblaze B2 Configuration](#backblaze-b2-configuration)
-  - [Cloudflare R2 Configuration](#cloudflare-r2-configuration)
-  - [SFTP Configuration](#sftp-configuration)
-    - [Environment Variables](#environment-variables)
-  - [Running baxfer as a Background Process](#running-baxfer-as-a-background-process)
-    - [Windows Task Scheduler Setup](#windows-task-scheduler-setup)
-    - [Linux Cron Setup](#linux-cron-setup)
-  - [Building from Source](#building-from-source)
-  - [Testing](#testing)
-  - [Contributing](#contributing)
-  - [License](#license)
+- [Important Notice](#️-important-notice)
+- [Features](#features)
+- [Installation](#installation)
+  - [Pre-built Binaries](#pre-built-binaries)
+  - [Using Go](#using-go)
+- [Usage](#usage)
+  - [Upload](#upload)
+  - [Download](#download)
+  - [Prune](#prune)
+- [CLI Usage Examples](#cli-usage-examples)
+  - [Linux Examples](#linux-examples)
+  - [Windows Examples](#windows-examples)
+  - [General Notes](#general-notes)
+- [Logging Usage](#logging-usage)
+- [Amazon S3 Configuration](#amazon-s3-configuration)
+- [Backblaze B2 Configuration](#backblaze-b2-configuration)
+- [Cloudflare R2 Configuration](#cloudflare-r2-configuration)
+- [SFTP Configuration](#sftp-configuration)
+  - [Environment Variables](#environment-variables)
+- [Running baxfer as a Background Process](#running-baxfer-as-a-background-process)
+  - [Windows Task Scheduler Setup](#windows-task-scheduler-setup)
+  - [Linux Cron Setup](#linux-cron-setup)
+- [Building from Source](#building-from-source)
+- [Testing](#testing)
+- [Contributing](#contributing)
+- [License](#license)
 
 ## Features
 
@@ -67,7 +66,9 @@ go install github.com/ngns-io/baxfer@latest
 
 ### Upload
 
-Upload backup files to cloud storage:
+Upload backup files to cloud storage.
+
+Alias: `u`
 
 ```
 baxfer upload [options] <root directory>
@@ -76,7 +77,7 @@ baxfer upload [options] <root directory>
 Options:
 - `--provider`, `-p`: Storage provider (s3, b2, b2s3, r2, or sftp) [default: "s3"]
 - `--region`, `-r`: AWS region (for S3 and b2s3 only) [default: "us-east-1" for s3 and "us-west-002" for b2s3]
-- `--bucket`, `-b`: Storage bucket name
+- `--bucket`, `-b`: Storage bucket name (required for s3, b2, b2s3, r2; not used for sftp)
 - `--keyprefix`, `-k`: Prefix for storage keys
 - `--backupext`, `-x`: File extension for backup files [default: ".bak"]
 - `--compress`, `-c`: Compress files before uploading
@@ -90,7 +91,9 @@ SFTP-specific options:
 
 ### Download
 
-Download a backup file from cloud storage:
+Download a backup file from cloud storage.
+
+Alias: `d`
 
 ```
 baxfer download [options] <key>
@@ -99,7 +102,7 @@ baxfer download [options] <key>
 Options:
 - `--provider`, `-p`: Storage provider (s3, b2, b2s3, r2, or sftp) [default: "s3"]
 - `--region`, `-r`: AWS region (for S3 and b2s3 only) [default: "us-east-1" for s3 and "us-west-002" for b2s3]
-- `--bucket`, `-b`: Storage bucket name
+- `--bucket`, `-b`: Storage bucket name (required for s3, b2, b2s3, r2; not used for sftp)
 - `--output`, `-o`: Output file name
 
 SFTP-specific options:
@@ -110,7 +113,9 @@ SFTP-specific options:
 
 ### Prune
 
-Remove old backup files from cloud storage:
+Remove old backup files from cloud storage.
+
+Alias: `p`
 
 ```
 baxfer prune [options]
@@ -119,9 +124,9 @@ baxfer prune [options]
 Options:
 - `--provider`, `-p`: Storage provider (s3, b2, b2s3, r2, or sftp) [default: "s3"]
 - `--region`, `-r`: AWS region (for S3 and b2s3 only) [default: "us-east-1" for s3 and "us-west-002" for b2s3]
-- `--bucket`, `-b`: Storage bucket name
+- `--bucket`, `-b`: Storage bucket name (required for s3, b2, b2s3, r2; not used for sftp)
 - `--keyprefix`, `-k`: Prefix for storage keys
-- `--age`, `-a`: Age of files to prune (e.g., 720h for 30 days)
+- `--age`, `-a`: Age of files to prune (e.g., 720h for 30 days) **[required]**
 
 SFTP-specific options:
 - `--sftp-host`: SFTP server hostname (env: SFTP_HOST)
@@ -307,7 +312,9 @@ baxfer upload --provider r2 --bucket your-bucket-name /path/to/backups
 
 ## SFTP Configuration
 
-To use SFTP as your storage provider, you need to set up either password or private key authentication:
+To use SFTP as your storage provider, you need to set up either password or private key authentication.
+
+Note: When using SFTP, the `--bucket` flag is not required. Instead, use `--sftp-path` to specify the base path on the server.
 
 ### Environment Variables
 - `SFTP_HOST`: SFTP server hostname (can be set via --sftp-host flag)
@@ -399,7 +406,7 @@ Reference the example scripts for best practices in error handling, logging, and
 
 ## Building from Source
 
-1. Ensure you have Go 1.16 or later installed.
+1. Ensure you have Go 1.23 or later installed.
 
 2. Clone the repository:
    ```
