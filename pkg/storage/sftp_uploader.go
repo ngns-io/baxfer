@@ -73,7 +73,7 @@ func NewSFTPUploader(host string, port int, username, basePath string, log logge
 	if err := sftpClient.MkdirAll(basePath); err != nil {
 		cleanupErr := errors.Join(sftpClient.Close(), sshClient.Close())
 		if cleanupErr != nil {
-			return nil, fmt.Errorf("failed to create base directory: %w (cleanup error: %v)", err, cleanupErr)
+			return nil, errors.Join(fmt.Errorf("failed to create base directory: %w", err), cleanupErr)
 		}
 		return nil, fmt.Errorf("failed to create base directory: %w", err)
 	}
