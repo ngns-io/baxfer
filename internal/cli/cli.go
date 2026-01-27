@@ -19,7 +19,7 @@ func NewApp() *cli.App {
 		Version:   version,
 		Compiled:  time.Now(),
 		Authors:   []*cli.Author{{Name: "Doug Evenhouse", Email: "doug@evenhouseconsulting.com"}},
-		Copyright: "(c) 2024 Evenhouse Consulting, Inc.",
+		Copyright: "(c) 2026 Evenhouse Consulting, Inc.",
 		Flags: []cli.Flag{
 			&cli.StringFlag{
 				Name:    "logfile",
