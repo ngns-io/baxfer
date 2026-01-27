@@ -2,7 +2,6 @@ package storage
 
 import (
 	"archive/zip"
-	"bytes"
 	"context"
 	"io"
 	"os"
@@ -15,42 +14,52 @@ import (
 	"github.com/urfave/cli/v2"
 )
 
-// syncZipWriter handles streaming compression synchronously
-type syncZipWriter struct {
-	zipWriter *zip.Writer
-	buffer    *bytes.Buffer
+// isCompressedFile returns true if the file extension indicates an already-compressed format.
+func isCompressedFile(filename string) bool {
+	switch strings.ToLower(filepath.Ext(filename)) {
+	case ".gz", ".gzip", ".zip", ".bz2", ".xz", ".lz", ".lz4", ".zst", ".zstd",
+		".7z", ".rar", ".cab", ".lzma", ".br",
+		".jpg", ".jpeg", ".png", ".gif", ".webp", ".avif",
+		".mp3", ".mp4", ".mkv", ".avi", ".mov", ".flac", ".ogg", ".aac",
+		".woff", ".woff2":
+		return true
+	}
+	return false
 }
 
-func newSyncZipWriter() *syncZipWriter {
-	buf := &bytes.Buffer{}
-	return &syncZipWriter{
-		zipWriter: zip.NewWriter(buf),
-		buffer:    buf,
-	}
-}
+// streamingZipCompress pipes zip compression directly to the returned reader,
+// avoiding buffering the entire archive in memory.
+func streamingZipCompress(file *os.File, filename string) io.Reader {
+	pr, pw := io.Pipe()
 
-func (w *syncZipWriter) compress(file *os.File, filename string) (io.Reader, error) {
-	header := &zip.FileHeader{
-		Name:   filepath.Base(filename),
-		Method: zip.Deflate,
-	}
+	go func() {
+		zw := zip.NewWriter(pw)
 
-	writer, err := w.zipWriter.CreateHeader(header)
-	if err != nil {
-		w.zipWriter.Close()
-		return nil, err
-	}
+		header := &zip.FileHeader{
+			Name:   filepath.Base(filename),
+			Method: zip.Deflate,
+		}
 
-	if _, err := io.Copy(writer, file); err != nil {
-		w.zipWriter.Close()
-		return nil, err
-	}
+		writer, err := zw.CreateHeader(header)
+		if err != nil {
+			pw.CloseWithError(err)
+			return
+		}
 
-	if err := w.zipWriter.Close(); err != nil {
-		return nil, err
-	}
+		if _, err := io.Copy(writer, file); err != nil {
+			pw.CloseWithError(err)
+			return
+		}
 
-	return bytes.NewReader(w.buffer.Bytes()), nil
+		if err := zw.Close(); err != nil {
+			pw.CloseWithError(err)
+			return
+		}
+
+		pw.Close()
+	}()
+
+	return pr
 }
 
 type Uploader interface {
@@ -114,9 +123,10 @@ func Upload(c *cli.Context, uploader Uploader, log logger.Logger) error {
 			return err
 		}
 
+		shouldCompress := compress && !isCompressedFile(path)
 		compressedKey := strings.TrimSuffix(originalKey, filepath.Ext(originalKey)) + ".zip"
 		uploadKey := originalKey
-		if compress {
+		if shouldCompress {
 			uploadKey = compressedKey
 		}
 
@@ -141,15 +151,13 @@ func Upload(c *cli.Context, uploader Uploader, log logger.Logger) error {
 		var reader io.Reader
 		var uploadSize int64
 
-		if compress {
-			zipWriter := newSyncZipWriter()
-			reader, err = zipWriter.compress(file, path)
-			if err != nil {
-				log.Error("Failed to compress file", "file", path, "error", err)
-				return err
-			}
+		if shouldCompress {
+			reader = streamingZipCompress(file, path)
 			uploadSize = -1 // Unknown compressed size
 		} else {
+			if compress && isCompressedFile(path) {
+				log.Info("Skipping compression for already-compressed file", "file", path)
+			}
 			reader = file
 			uploadSize = info.Size()
 		}

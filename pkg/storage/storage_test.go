@@ -158,6 +158,71 @@ func TestUpload(t *testing.T) {
 	}
 }
 
+func TestIsCompressedFile(t *testing.T) {
+	compressed := []string{".gz", ".zip", ".bz2", ".xz", ".7z", ".rar", ".jpg", ".png", ".mp4", ".zst", ".woff2"}
+	for _, ext := range compressed {
+		assert.True(t, isCompressedFile("file"+ext), "expected %s to be detected as compressed", ext)
+	}
+
+	uncompressed := []string{".bak", ".sql", ".txt", ".csv", ".xml", ".log"}
+	for _, ext := range uncompressed {
+		assert.False(t, isCompressedFile("file"+ext), "expected %s to not be detected as compressed", ext)
+	}
+}
+
+func TestUpload_SkipsCompressionForCompressedFile(t *testing.T) {
+	tempDir, err := os.MkdirTemp("", "baxfer-test")
+	assert.NoError(t, err)
+	defer os.RemoveAll(tempDir)
+
+	// Create a file with a compressed extension
+	testFile := filepath.Join(tempDir, "backup.gz")
+	err = os.WriteFile(testFile, []byte("already compressed data"), 0644)
+	assert.NoError(t, err)
+
+	mockUploader := new(MockUploader)
+	mockLogger := NewMockLogger()
+
+	uploadedData := &bytes.Buffer{}
+
+	// Key should remain .gz (not .zip) since compression is skipped
+	mockUploader.On("FileExists", mock.Anything, "backup.gz").Return(false, nil)
+	mockUploader.On("Upload",
+		mock.Anything,
+		"backup.gz",
+		mock.MatchedBy(func(r interface{}) bool {
+			reader, ok := r.(io.Reader)
+			if !ok {
+				return false
+			}
+			_, err := io.Copy(uploadedData, reader)
+			return err == nil
+		}),
+		mock.AnythingOfType("int64"),
+	).Return(nil)
+
+	mockLogger.On("Info", mock.Anything, mock.Anything).Return()
+
+	app := &cli.App{}
+	set := flag.NewFlagSet("test", 0)
+	set.String("backupext", ".gz", "doc")
+	set.Bool("compress", true, "doc")
+	set.Bool("non-interactive", true, "doc")
+	ctx := cli.NewContext(app, set, nil)
+
+	err = set.Parse([]string{tempDir})
+	assert.NoError(t, err)
+
+	err = Upload(ctx, mockUploader, mockLogger)
+	assert.NoError(t, err)
+
+	// Should be raw data, not wrapped in a zip
+	assert.Equal(t, "already compressed data", uploadedData.String())
+
+	mockUploader.AssertExpectations(t)
+	mockLogger.AssertExpectations(t)
+}
+
 func TestFileUploadEligible(t *testing.T) {
 	mockUploader := new(MockUploader)
 	mockLogger := NewMockLogger()
