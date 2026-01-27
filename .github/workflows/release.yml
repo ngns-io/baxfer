@@ -1,0 +1,197 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+env:
+  GO_VERSION: '1.23'
+
+permissions:
+  contents: write
+
+jobs:
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+
+      - name: Download dependencies
+        run: go mod download
+
+      - name: Run tests
+        run: go test -v -race ./...
+
+  build:
+    name: Build
+    needs: test
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - goos: darwin
+            goarch: amd64
+            suffix: ''
+          - goos: darwin
+            goarch: arm64
+            suffix: ''
+          - goos: linux
+            goarch: amd64
+            suffix: ''
+          - goos: linux
+            goarch: arm64
+            suffix: ''
+          - goos: windows
+            goarch: amd64
+            suffix: '.exe'
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+
+      - name: Get version from tag
+        id: version
+        run: echo "VERSION=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+
+      - name: Build binary
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+          CGO_ENABLED: 0
+        run: |
+          BINARY_NAME="baxfer_${{ matrix.goos }}_${{ matrix.goarch }}${{ matrix.suffix }}"
+          go build -trimpath \
+            -ldflags="-s -w -X github.com/ngns-io/baxfer/internal/cli.version=${{ steps.version.outputs.VERSION }}" \
+            -o "dist/${BINARY_NAME}" \
+            ./cmd/baxfer
+          echo "Built ${BINARY_NAME}"
+
+      - name: Generate checksum
+        run: |
+          cd dist
+          sha256sum * > checksums.txt
+          cat checksums.txt
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: baxfer_${{ matrix.goos }}_${{ matrix.goarch }}
+          path: dist/*
+          retention-days: 1
+
+  release:
+    name: Release
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Prepare release files
+        run: |
+          mkdir -p release
+          # Move all binaries to release directory
+          find artifacts -type f -name 'baxfer_*' ! -name 'checksums.txt' -exec mv {} release/ \;
+          # Generate combined checksums
+          cd release
+          sha256sum baxfer_* > checksums_sha256.txt
+          cat checksums_sha256.txt
+
+      - name: Get version from tag
+        id: version
+        run: echo "VERSION=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+
+      - name: Check if prerelease
+        id: prerelease
+        run: |
+          if [[ "${{ steps.version.outputs.VERSION }}" == *"-alpha"* ]] || \
+             [[ "${{ steps.version.outputs.VERSION }}" == *"-beta"* ]] || \
+             [[ "${{ steps.version.outputs.VERSION }}" == *"-rc"* ]]; then
+            echo "IS_PRERELEASE=true" >> $GITHUB_OUTPUT
+          else
+            echo "IS_PRERELEASE=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Generate release notes
+        id: release_notes
+        run: |
+          # Get the previous tag
+          PREV_TAG=$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || echo "")
+
+          if [ -n "$PREV_TAG" ]; then
+            echo "Generating changelog from $PREV_TAG to ${{ steps.version.outputs.VERSION }}"
+            CHANGELOG=$(git log --pretty=format:"- %s (%h)" $PREV_TAG..HEAD --no-merges)
+          else
+            echo "No previous tag found, using all commits"
+            CHANGELOG=$(git log --pretty=format:"- %s (%h)" --no-merges -20)
+          fi
+
+          # Write release notes to file
+          cat > release_notes.md << 'NOTES_EOF'
+          ## What's Changed
+
+          NOTES_EOF
+
+          echo "$CHANGELOG" >> release_notes.md
+
+          cat >> release_notes.md << 'NOTES_EOF'
+
+          ## Checksums
+
+          SHA256 checksums are provided in `checksums_sha256.txt`.
+
+          To verify a download:
+          ```bash
+          # Linux/macOS
+          sha256sum -c checksums_sha256.txt --ignore-missing
+
+          # Or manually verify
+          sha256sum baxfer_linux_amd64
+          ```
+
+          ## Installation
+
+          Download the appropriate binary for your platform:
+          - **macOS (Intel)**: `baxfer_darwin_amd64`
+          - **macOS (Apple Silicon)**: `baxfer_darwin_arm64`
+          - **Linux (x86_64)**: `baxfer_linux_amd64`
+          - **Linux (ARM64)**: `baxfer_linux_arm64`
+          - **Windows**: `baxfer_windows_amd64.exe`
+
+          ```bash
+          # Example: Linux x86_64
+          chmod +x baxfer_linux_amd64
+          sudo mv baxfer_linux_amd64 /usr/local/bin/baxfer
+          ```
+          NOTES_EOF
+
+          cat release_notes.md
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            release/baxfer_*
+            release/checksums_sha256.txt
+          body_path: release_notes.md
+          prerelease: ${{ steps.prerelease.outputs.IS_PRERELEASE }}
+          generate_release_notes: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

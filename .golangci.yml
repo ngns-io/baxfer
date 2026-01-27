@@ -1,0 +1,52 @@
+run:
+  timeout: 5m
+  modules-download-mode: readonly
+
+linters:
+  enable:
+    - errcheck
+    - gosimple
+    - govet
+    - ineffassign
+    - staticcheck
+    - unused
+    - gofmt
+    - goimports
+    - misspell
+    - unconvert
+    - unparam
+    - bodyclose
+    - noctx
+    - errorlint
+
+linters-settings:
+  errcheck:
+    check-type-assertions: true
+    check-blank: true
+  govet:
+    enable-all: true
+    disable:
+      - fieldalignment
+  gofmt:
+    simplify: true
+  misspell:
+    locale: US
+  errorlint:
+    errorf: true
+    asserts: true
+    comparison: true
+
+issues:
+  exclude-rules:
+    # Exclude some linters from running on test files
+    - path: _test\.go
+      linters:
+        - errcheck
+        - unparam
+    # Exclude "should have comment" warnings for exported functions
+    - linters:
+        - revive
+      text: "exported:"
+
+  max-issues-per-linter: 50
+  max-same-issues: 10
