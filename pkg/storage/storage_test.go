@@ -54,10 +54,16 @@ func (m *MockLogger) Close() error {
 // MockUploader is a mock implementation of the Uploader interface
 type MockUploader struct {
 	mock.Mock
+	UploadedData bytes.Buffer
 }
 
 func (m *MockUploader) Upload(ctx context.Context, key string, reader io.Reader, size int64) error {
-	args := m.Called(ctx, key, reader, size)
+	// Drain the reader before calling m.Called so testify never holds a
+	// reference to a live io.PipeReader, which would cause a data race
+	// when AssertExpectations inspects arguments via reflection.
+	m.UploadedData.Reset()
+	_, _ = io.Copy(&m.UploadedData, reader)
+	args := m.Called(ctx, key, size)
 	return args.Error(0)
 }
 
@@ -109,21 +115,10 @@ func TestUpload(t *testing.T) {
 			mockUploader := new(MockUploader)
 			mockLogger := NewMockLogger()
 
-			uploadedData := &bytes.Buffer{}
-
 			mockUploader.On("FileExists", mock.Anything, tt.expectedKey).Return(false, nil)
 			mockUploader.On("Upload",
 				mock.Anything,
 				tt.expectedKey,
-				mock.MatchedBy(func(r interface{}) bool {
-					reader, ok := r.(io.Reader)
-					if !ok {
-						return false
-					}
-					// Synchronously read all data
-					_, err := io.Copy(uploadedData, reader)
-					return err == nil
-				}),
 				mock.AnythingOfType("int64"),
 			).Return(nil)
 
@@ -143,13 +138,12 @@ func TestUpload(t *testing.T) {
 			assert.NoError(t, err)
 
 			if tt.compress {
-				// Verify uploaded data is a valid zip file
-				reader := bytes.NewReader(uploadedData.Bytes())
-				zipReader, err := zip.NewReader(reader, int64(uploadedData.Len()))
+				reader := bytes.NewReader(mockUploader.UploadedData.Bytes())
+				zipReader, err := zip.NewReader(reader, int64(mockUploader.UploadedData.Len()))
 				assert.NoError(t, err)
 				assert.Len(t, zipReader.File, 1)
 			} else {
-				assert.Equal(t, "test data", uploadedData.String())
+				assert.Equal(t, "test data", mockUploader.UploadedData.String())
 			}
 
 			mockUploader.AssertExpectations(t)
@@ -183,21 +177,11 @@ func TestUpload_SkipsCompressionForCompressedFile(t *testing.T) {
 	mockUploader := new(MockUploader)
 	mockLogger := NewMockLogger()
 
-	uploadedData := &bytes.Buffer{}
-
 	// Key should remain .gz (not .zip) since compression is skipped
 	mockUploader.On("FileExists", mock.Anything, "backup.gz").Return(false, nil)
 	mockUploader.On("Upload",
 		mock.Anything,
 		"backup.gz",
-		mock.MatchedBy(func(r interface{}) bool {
-			reader, ok := r.(io.Reader)
-			if !ok {
-				return false
-			}
-			_, err := io.Copy(uploadedData, reader)
-			return err == nil
-		}),
 		mock.AnythingOfType("int64"),
 	).Return(nil)
 
@@ -217,7 +201,7 @@ func TestUpload_SkipsCompressionForCompressedFile(t *testing.T) {
 	assert.NoError(t, err)
 
 	// Should be raw data, not wrapped in a zip
-	assert.Equal(t, "already compressed data", uploadedData.String())
+	assert.Equal(t, "already compressed data", mockUploader.UploadedData.String())
 
 	mockUploader.AssertExpectations(t)
 	mockLogger.AssertExpectations(t)
