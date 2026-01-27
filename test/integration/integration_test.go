@@ -220,15 +220,15 @@ func TestStreamingCompression(t *testing.T) {
 				zipWriter := zip.NewWriter(pw)
 				defer zipWriter.Close()
 
-				file, err := zipWriter.Create(strings.ReplaceAll(testKey, "\\", "/"))
-				if err != nil {
-					uploadErr <- err
+				file, createErr := zipWriter.Create(strings.ReplaceAll(testKey, "\\", "/"))
+				if createErr != nil {
+					uploadErr <- createErr
 					return
 				}
 
-				_, err = io.Copy(file, bytes.NewReader(testData))
-				if err != nil {
-					uploadErr <- err
+				_, copyErr := io.Copy(file, bytes.NewReader(testData))
+				if copyErr != nil {
+					uploadErr <- copyErr
 					return
 				}
 

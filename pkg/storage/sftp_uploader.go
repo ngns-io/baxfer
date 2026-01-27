@@ -32,12 +32,12 @@ func NewSFTPUploader(host string, port int, username, basePath string, log logge
 	if privateKeyPath != "" {
 		key, err := os.ReadFile(privateKeyPath)
 		if err != nil {
-			return nil, fmt.Errorf("unable to read private key: %v", err)
+			return nil, fmt.Errorf("unable to read private key: %w", err)
 		}
 
 		signer, err := ssh.ParsePrivateKey(key)
 		if err != nil {
-			return nil, fmt.Errorf("unable to parse private key: %v", err)
+			return nil, fmt.Errorf("unable to parse private key: %w", err)
 		}
 
 		authMethod = ssh.PublicKeys(signer)
@@ -59,23 +59,23 @@ func NewSFTPUploader(host string, port int, username, basePath string, log logge
 	// Connect to SSH server
 	sshClient, err := ssh.Dial("tcp", fmt.Sprintf("%s:%d", host, port), config)
 	if err != nil {
-		return nil, fmt.Errorf("failed to connect to SSH server: %v", err)
+		return nil, fmt.Errorf("failed to connect to SSH server: %w", err)
 	}
 
 	// Create SFTP client
 	sftpClient, err := sftp.NewClient(sshClient)
 	if err != nil {
 		sshClient.Close()
-		return nil, fmt.Errorf("failed to create SFTP client: %v", err)
+		return nil, fmt.Errorf("failed to create SFTP client: %w", err)
 	}
 
 	// Create base directory if it doesn't exist
 	if err := sftpClient.MkdirAll(basePath); err != nil {
 		cleanupErr := errors.Join(sftpClient.Close(), sshClient.Close())
 		if cleanupErr != nil {
-			return nil, fmt.Errorf("failed to create base directory: %v (cleanup error: %v)", err, cleanupErr)
+			return nil, fmt.Errorf("failed to create base directory: %w (cleanup error: %v)", err, cleanupErr)
 		}
-		return nil, fmt.Errorf("failed to create base directory: %v", err)
+		return nil, fmt.Errorf("failed to create base directory: %w", err)
 	}
 
 	uploader := &SFTPUploader{
@@ -105,13 +105,13 @@ func (u *SFTPUploader) Upload(ctx context.Context, key string, reader io.Reader,
 
 	// Ensure directory exists
 	if err := u.client.MkdirAll(dir); err != nil {
-		return fmt.Errorf("failed to create directory structure: %v", err)
+		return fmt.Errorf("failed to create directory structure: %w", err)
 	}
 
 	// Create remote file
 	dstFile, err := u.client.Create(fullPath)
 	if err != nil {
-		return fmt.Errorf("failed to create remote file: %v", err)
+		return fmt.Errorf("failed to create remote file: %w", err)
 	}
 	defer dstFile.Close()
 
@@ -181,7 +181,7 @@ func (u *SFTPUploader) List(ctx context.Context, prefix string) ([]string, error
 			return nil, err
 		}
 		if err := walker.Err(); err != nil {
-			return nil, fmt.Errorf("error walking directory: %v", err)
+			return nil, fmt.Errorf("error walking directory: %w", err)
 		}
 
 		path := walker.Path()
