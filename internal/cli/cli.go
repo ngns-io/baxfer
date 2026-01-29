@@ -20,36 +20,10 @@ func NewApp() *cli.App {
 		Compiled:  time.Now(),
 		Authors:   []*cli.Author{{Name: "Doug Evenhouse", Email: "doug@evenhouseconsulting.com"}},
 		Copyright: "(c) 2026 Evenhouse Consulting, Inc.",
-		Flags:     loggingFlags(),
 		Commands: []*cli.Command{
 			newUploadCommand(),
 			newDownloadCommand(),
 			newPruneCommand(),
-		},
-		Before: func(c *cli.Context) error {
-			// Initialize logger
-			logConfig := logger.LogConfig{
-				Filename:     c.String("logfile"),
-				MaxSize:      c.Int("log-max-size"),
-				MaxAge:       c.Int("log-max-age"),
-				MaxBackups:   c.Int("log-max-backups"),
-				Compress:     c.Bool("log-compress"),
-				ClearOnStart: c.Bool("log-clear"),
-			}
-			log, err := logger.New(logConfig, c.Bool("quiet"))
-			if err != nil {
-				return err
-			}
-			c.App.Metadata["logger"] = log
-			return nil
-		},
-		After: func(c *cli.Context) error {
-			// Close logger
-			log, err := getLogger(c)
-			if err != nil {
-				return err
-			}
-			return log.Close()
 		},
 	}
 	return app
@@ -100,11 +74,13 @@ func newUploadCommand() *cli.Command {
 			},
 		},
 		Action: func(c *cli.Context) error {
-			log, err := getLogger(c)
+			log, err := initLogger(c)
 			if err != nil {
 				return cli.Exit(err.Error(), 1)
 			}
-			uploader, err := getUploader(c)
+			defer log.Close()
+
+			uploader, err := getUploader(c, log)
 			if err != nil {
 				return cli.Exit(err.Error(), 1)
 			}
@@ -146,11 +122,13 @@ func newDownloadCommand() *cli.Command {
 			},
 		},
 		Action: func(c *cli.Context) error {
-			log, err := getLogger(c)
+			log, err := initLogger(c)
 			if err != nil {
 				return cli.Exit(err.Error(), 1)
 			}
-			uploader, err := getUploader(c)
+			defer log.Close()
+
+			uploader, err := getUploader(c, log)
 			if err != nil {
 				return cli.Exit(err.Error(), 1)
 			}
@@ -208,11 +186,13 @@ func newPruneCommand() *cli.Command {
 			},
 		},
 		Action: func(c *cli.Context) error {
-			log, err := getLogger(c)
+			log, err := initLogger(c)
 			if err != nil {
 				return cli.Exit(err.Error(), 1)
 			}
-			uploader, err := getUploader(c)
+			defer log.Close()
+
+			uploader, err := getUploader(c, log)
 			if err != nil {
 				return cli.Exit(err.Error(), 1)
 			}
@@ -291,21 +271,21 @@ func loggingFlags() []cli.Flag {
 	}
 }
 
-func getLogger(c *cli.Context) (logger.Logger, error) {
-	log, ok := c.App.Metadata["logger"].(logger.Logger)
-	if !ok {
-		return nil, fmt.Errorf("logger not initialized")
+func initLogger(c *cli.Context) (logger.Logger, error) {
+	logConfig := logger.LogConfig{
+		Filename:     c.String("logfile"),
+		MaxSize:      c.Int("log-max-size"),
+		MaxAge:       c.Int("log-max-age"),
+		MaxBackups:   c.Int("log-max-backups"),
+		Compress:     c.Bool("log-compress"),
+		ClearOnStart: c.Bool("log-clear"),
 	}
-	return log, nil
+	return logger.New(logConfig, c.Bool("quiet"))
 }
 
-func getUploader(c *cli.Context) (storage.Uploader, error) {
+func getUploader(c *cli.Context, log logger.Logger) (storage.Uploader, error) {
 	provider := c.String("provider")
 	bucket := c.String("bucket")
-	log, err := getLogger(c)
-	if err != nil {
-		return nil, err
-	}
 
 	switch provider {
 	case "s3":
