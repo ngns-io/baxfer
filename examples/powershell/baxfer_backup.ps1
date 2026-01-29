@@ -143,13 +143,14 @@ if ($Region) {
 }
 
 # Build baxfer arguments
+# Note: Logging flags can be placed before OR after the subcommand - both work.
 $baxferArgs = @(
-    "--non-interactive"
-    "--logfile", $LogFile
     "upload"
     "--provider", "s3"
     "--bucket", $Bucket
     "--backupext", $BackupExtension
+    "--non-interactive"
+    "--logfile", $LogFile
 )
 
 if ($KeyPrefix) {

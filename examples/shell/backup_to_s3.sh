@@ -18,16 +18,17 @@ export AWS_REGION="us-east-1"
 mkdir -p "$LOG_DIR"
 
 # Run backup with logging
+# Note: Logging flags can be placed before OR after the subcommand - both work.
 {
     echo "[$TIMESTAMP] Starting backup..."
-    
-    baxfer --non-interactive \
-           --logfile "$LOG_FILE" \
-           --log-max-size 10 \
-           upload \
+
+    baxfer upload \
            --provider s3 \
            --bucket your-bucket-name \
            --keyprefix "daily-backup/$TIMESTAMP" \
+           --non-interactive \
+           --logfile "$LOG_FILE" \
+           --log-max-size 10 \
            "$BACKUP_DIR"
 
     echo "[$TIMESTAMP] Backup completed successfully"

@@ -20,44 +20,7 @@ func NewApp() *cli.App {
 		Compiled:  time.Now(),
 		Authors:   []*cli.Author{{Name: "Doug Evenhouse", Email: "doug@evenhouseconsulting.com"}},
 		Copyright: "(c) 2026 Evenhouse Consulting, Inc.",
-		Flags: []cli.Flag{
-			&cli.StringFlag{
-				Name:    "logfile",
-				Aliases: []string{"l"},
-				Usage:   "Specify the log file location",
-				Value:   "baxfer.log",
-			},
-			&cli.IntFlag{
-				Name:  "log-max-size",
-				Usage: "Maximum size of log file before rotation (in megabytes)",
-				Value: 10,
-			},
-			&cli.IntFlag{
-				Name:  "log-max-age",
-				Usage: "Maximum number of days to retain old log files",
-				Value: 30,
-			},
-			&cli.IntFlag{
-				Name:  "log-max-backups",
-				Usage: "Maximum number of old log files to retain",
-				Value: 5,
-			},
-			&cli.BoolFlag{
-				Name:  "log-compress",
-				Usage: "Compress rotated log files",
-				Value: true,
-			},
-			&cli.BoolFlag{
-				Name:  "log-clear",
-				Usage: "Clear log file on start",
-				Value: false,
-			},
-			&cli.BoolFlag{
-				Name:    "quiet",
-				Aliases: []string{"q"},
-				Usage:   "Enable quiet mode (log only errors)",
-			},
-		},
+		Flags:     loggingFlags(),
 		Commands: []*cli.Command{
 			newUploadCommand(),
 			newDownloadCommand(),
@@ -149,6 +112,7 @@ func newUploadCommand() *cli.Command {
 		},
 	}
 	cmd.Flags = append(cmd.Flags, sftpFlags()...)
+	cmd.Flags = append(cmd.Flags, loggingFlags()...)
 	return cmd
 }
 
@@ -205,6 +169,7 @@ func newDownloadCommand() *cli.Command {
 		},
 	}
 	cmd.Flags = append(cmd.Flags, sftpFlags()...)
+	cmd.Flags = append(cmd.Flags, loggingFlags()...)
 	return cmd
 }
 
@@ -255,6 +220,7 @@ func newPruneCommand() *cli.Command {
 		},
 	}
 	cmd.Flags = append(cmd.Flags, sftpFlags()...)
+	cmd.Flags = append(cmd.Flags, loggingFlags()...)
 	return cmd
 }
 
@@ -280,6 +246,47 @@ func sftpFlags() []cli.Flag {
 			Name:    "sftp-path",
 			Usage:   "Base path on SFTP server",
 			EnvVars: []string{"SFTP_PATH"},
+		},
+	}
+}
+
+func loggingFlags() []cli.Flag {
+	return []cli.Flag{
+		&cli.StringFlag{
+			Name:    "logfile",
+			Aliases: []string{"l"},
+			Usage:   "Specify the log file location",
+			Value:   "baxfer.log",
+		},
+		&cli.IntFlag{
+			Name:  "log-max-size",
+			Usage: "Maximum size of log file before rotation (in megabytes)",
+			Value: 10,
+		},
+		&cli.IntFlag{
+			Name:  "log-max-age",
+			Usage: "Maximum number of days to retain old log files",
+			Value: 30,
+		},
+		&cli.IntFlag{
+			Name:  "log-max-backups",
+			Usage: "Maximum number of old log files to retain",
+			Value: 5,
+		},
+		&cli.BoolFlag{
+			Name:  "log-compress",
+			Usage: "Compress rotated log files",
+			Value: true,
+		},
+		&cli.BoolFlag{
+			Name:  "log-clear",
+			Usage: "Clear log file on start",
+			Value: false,
+		},
+		&cli.BoolFlag{
+			Name:    "quiet",
+			Aliases: []string{"q"},
+			Usage:   "Enable quiet mode (log only errors)",
 		},
 	}
 }

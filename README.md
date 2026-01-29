@@ -136,6 +136,16 @@ SFTP-specific options:
 
 ## CLI Usage Examples
 
+Logging flags (`--logfile`, `--log-max-size`, etc.) can be placed either before or after the subcommand. Both styles are valid:
+
+```
+# Before subcommand
+baxfer --logfile /var/log/baxfer.log upload --bucket my-bucket /path/to/backups
+
+# After subcommand
+baxfer upload --bucket my-bucket --logfile /var/log/baxfer.log /path/to/backups
+```
+
 ### Linux Examples
 
 1. Default log file location:
@@ -145,17 +155,17 @@ SFTP-specific options:
 
 2. Specifying a log file in the current directory:
    ```
-   baxfer --logfile ./baxfer.log upload --bucket my-bucket /path/to/backups
+   baxfer upload --bucket my-bucket --logfile ./baxfer.log /path/to/backups
    ```
 
 3. Specifying a log file with an absolute path:
    ```
-   baxfer --logfile /var/log/baxfer.log upload --bucket my-bucket /path/to/backups
+   baxfer upload --bucket my-bucket --logfile /var/log/baxfer.log /path/to/backups
    ```
 
 4. Log file path with spaces:
    ```
-   baxfer --logfile "/var/log/baxfer logs/app.log" upload --bucket my-bucket /path/to/backups
+   baxfer upload --bucket my-bucket --logfile "/var/log/baxfer logs/app.log" /path/to/backups
    ```
 
 ### Windows Examples
@@ -167,17 +177,17 @@ SFTP-specific options:
 
 2. Specifying a log file in the current directory:
    ```
-   baxfer.exe --logfile .\baxfer.log upload --bucket my-bucket C:\path\to\backups
+   baxfer.exe upload --bucket my-bucket --logfile .\baxfer.log C:\path\to\backups
    ```
 
 3. Specifying a log file with an absolute path:
    ```
-   baxfer.exe --logfile C:\Logs\baxfer.log upload --bucket my-bucket C:\path\to\backups
+   baxfer.exe upload --bucket my-bucket --logfile C:\Logs\baxfer.log C:\path\to\backups
    ```
 
 4. Log file path with spaces:
    ```
-   baxfer.exe --logfile "C:\Program Files\Baxfer\logs\app.log" upload --bucket my-bucket C:\path\to\backups
+   baxfer.exe upload --bucket my-bucket --logfile "C:\Program Files\Baxfer\logs\app.log" C:\path\to\backups
    ```
 
 Note: On Windows, you can use either forward slashes (/) or backslashes (\\) as path separators. Windows PowerShell and Command Prompt will understand both.
@@ -193,13 +203,17 @@ Note: On Windows, you can use either forward slashes (/) or backslashes (\\) as 
 
 ## Logging Usage
 
-Baxfer now includes advanced logging options to help manage log file growth:
+Baxfer includes advanced logging options to help manage log file growth. These options can be placed **either before or after the subcommand** for flexibility:
 
 ```
-baxfer [global options] command [command options] [arguments...]
+# Logging flags before subcommand
+baxfer --logfile /var/log/baxfer.log upload --bucket my-bucket /path/to/backups
+
+# Logging flags after subcommand (also valid)
+baxfer upload --bucket my-bucket --logfile /var/log/baxfer.log /path/to/backups
 ```
 
-Global Options:
+Logging Options:
   --logfile value, -l value       Log file path (default: "baxfer.log")
   --log-max-size value            Maximum size of log file before rotation (in megabytes) (default: 10)
   --log-max-age value             Maximum number of days to retain old log files (default: 30)

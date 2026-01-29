@@ -2,6 +2,14 @@
 
 This folder contains PowerShell scripts for running baxfer on Windows systems.
 
+> **Note:** Logging flags (`--logfile`, `--log-max-size`, `--quiet`, etc.) can be placed either before or after the subcommand. Both styles are valid:
+> ```powershell
+> # Before subcommand
+> baxfer.exe --logfile C:\Logs\baxfer.log upload --bucket my-bucket C:\Backups
+> # After subcommand
+> baxfer.exe upload --bucket my-bucket --logfile C:\Logs\baxfer.log C:\Backups
+> ```
+
 ## Scripts
 
 ### run_baxfer.ps1
