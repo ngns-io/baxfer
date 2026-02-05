@@ -130,7 +130,7 @@ func Upload(c *cli.Context, uploader Uploader, log logger.Logger) error {
 			uploadKey = compressedKey
 		}
 
-		eligible, err := fileUploadEligible(c.Context, uploader, uploadKey, info, log)
+		eligible, err := fileUploadEligible(c.Context, uploader, uploadKey, info, shouldCompress, log)
 		if err != nil {
 			log.Error("Error checking file eligibility", "file", path, "error", err)
 			return err
@@ -255,7 +255,7 @@ func Prune(c *cli.Context, uploader Uploader, log logger.Logger) error {
 	return nil
 }
 
-func fileUploadEligible(ctx context.Context, uploader Uploader, key string, info os.FileInfo, log logger.Logger) (bool, error) {
+func fileUploadEligible(ctx context.Context, uploader Uploader, key string, info os.FileInfo, compressed bool, log logger.Logger) (bool, error) {
 	exists, err := uploader.FileExists(ctx, key)
 	if err != nil {
 		log.Error("Error checking if file exists", "key", key, "error", err)
@@ -277,7 +277,9 @@ func fileUploadEligible(ctx context.Context, uploader Uploader, key string, info
 		return true, nil
 	}
 
-	if info.Size() != remoteInfo.Size {
+	// Skip size comparison when compression is enabled since local (uncompressed)
+	// and remote (compressed) sizes will naturally differ
+	if !compressed && info.Size() != remoteInfo.Size {
 		log.Info("File sizes differ", "key", key, "local_size", info.Size(), "remote_size", remoteInfo.Size)
 		return true, nil
 	}

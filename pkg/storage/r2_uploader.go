@@ -67,10 +67,11 @@ func NewR2Uploader(bucket string, log logger.Logger) (*R2Uploader, error) {
 
 func (u *R2Uploader) Upload(ctx context.Context, key string, reader io.Reader, size int64) error {
 	input := &s3.PutObjectInput{
-		Bucket:        &u.Bucket,
-		Key:           &key,
-		Body:          reader,
-		ContentLength: aws.Int64(size),
+		Bucket:            &u.Bucket,
+		Key:               &key,
+		Body:              reader,
+		ContentLength:     aws.Int64(size),
+		ChecksumAlgorithm: types.ChecksumAlgorithmCrc32,
 	}
 
 	// Force path-style addressing for R2

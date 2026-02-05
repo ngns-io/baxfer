@@ -8,6 +8,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
+	"github.com/aws/aws-sdk-go-v2/service/s3/types"
 	"github.com/ngns-io/baxfer/pkg/logger"
 )
 
@@ -54,10 +55,11 @@ func NewS3Uploader(region, bucket string, log logger.Logger) (*S3Uploader, error
 
 func (u *S3Uploader) Upload(ctx context.Context, key string, reader io.Reader, size int64) error {
 	_, err := u.Uploader.Upload(ctx, &s3.PutObjectInput{
-		Bucket:        &u.Bucket,
-		Key:           &key,
-		Body:          reader,
-		ContentLength: aws.Int64(size),
+		Bucket:            &u.Bucket,
+		Key:               &key,
+		Body:              reader,
+		ContentLength:     aws.Int64(size),
+		ChecksumAlgorithm: types.ChecksumAlgorithmCrc32,
 	})
 	return err
 }

@@ -214,6 +214,7 @@ func TestFileUploadEligible(t *testing.T) {
 	tests := []struct {
 		name           string
 		key            string
+		compressed     bool
 		fileExists     bool
 		localModTime   time.Time
 		remoteModTime  time.Time
@@ -225,6 +226,7 @@ func TestFileUploadEligible(t *testing.T) {
 		{
 			name:           "Uncompressed file doesn't exist remotely",
 			key:            "test.bak",
+			compressed:     false,
 			fileExists:     false,
 			expectedResult: true,
 			expectInfoLog:  false,
@@ -232,6 +234,7 @@ func TestFileUploadEligible(t *testing.T) {
 		{
 			name:           "Compressed file doesn't exist remotely",
 			key:            "test.zip",
+			compressed:     true,
 			fileExists:     false,
 			expectedResult: true,
 			expectInfoLog:  false,
@@ -239,6 +242,7 @@ func TestFileUploadEligible(t *testing.T) {
 		{
 			name:           "Uncompressed file exists, local is newer",
 			key:            "test.bak",
+			compressed:     false,
 			fileExists:     true,
 			localModTime:   time.Now(),
 			remoteModTime:  time.Now().Add(-1 * time.Hour),
@@ -248,8 +252,21 @@ func TestFileUploadEligible(t *testing.T) {
 			expectInfoLog:  true,
 		},
 		{
-			name:           "Compressed file exists, same mod time, different size",
+			name:           "Compressed file exists, same mod time, different size - should skip",
 			key:            "test.zip",
+			compressed:     true,
+			fileExists:     true,
+			localModTime:   time.Now(),
+			remoteModTime:  time.Now(),
+			localSize:      100,
+			remoteSize:     50, // compressed size differs
+			expectedResult: false,
+			expectInfoLog:  false,
+		},
+		{
+			name:           "Uncompressed file exists, same mod time, different size - should upload",
+			key:            "test.bak",
+			compressed:     false,
 			fileExists:     true,
 			localModTime:   time.Now(),
 			remoteModTime:  time.Now(),
@@ -261,6 +278,7 @@ func TestFileUploadEligible(t *testing.T) {
 		{
 			name:           "Uncompressed file exists, same mod time and size",
 			key:            "test.bak",
+			compressed:     false,
 			fileExists:     true,
 			localModTime:   time.Now(),
 			remoteModTime:  time.Now(),
@@ -268,6 +286,18 @@ func TestFileUploadEligible(t *testing.T) {
 			remoteSize:     100,
 			expectedResult: false,
 			expectInfoLog:  false,
+		},
+		{
+			name:           "Compressed file exists, local is newer - should upload",
+			key:            "test.zip",
+			compressed:     true,
+			fileExists:     true,
+			localModTime:   time.Now(),
+			remoteModTime:  time.Now().Add(-1 * time.Hour),
+			localSize:      100,
+			remoteSize:     50,
+			expectedResult: true,
+			expectInfoLog:  true,
 		},
 	}
 
@@ -281,7 +311,7 @@ func TestFileUploadEligible(t *testing.T) {
 				mockLogger.On("Info", mock.Anything, mock.Anything).Return()
 			}
 
-			eligible, err := fileUploadEligible(context.Background(), mockUploader, tt.key, &mockFileInfo{modTime: tt.localModTime, size: tt.localSize}, mockLogger)
+			eligible, err := fileUploadEligible(context.Background(), mockUploader, tt.key, &mockFileInfo{modTime: tt.localModTime, size: tt.localSize}, tt.compressed, mockLogger)
 			assert.NoError(t, err)
 			assert.Equal(t, tt.expectedResult, eligible)
 
@@ -368,7 +398,7 @@ func TestFileUploadEligible_FileExistsError(t *testing.T) {
 	mockUploader.On("FileExists", mock.Anything, "test.bak").Return(false, expectedErr)
 	mockLogger.On("Error", mock.Anything, mock.Anything).Return()
 
-	eligible, err := fileUploadEligible(context.Background(), mockUploader, "test.bak", &mockFileInfo{}, mockLogger)
+	eligible, err := fileUploadEligible(context.Background(), mockUploader, "test.bak", &mockFileInfo{}, false, mockLogger)
 	assert.Error(t, err)
 	assert.False(t, eligible)
 	assert.Equal(t, expectedErr, err)
@@ -385,7 +415,7 @@ func TestFileUploadEligible_GetFileInfoError(t *testing.T) {
 	mockUploader.On("GetFileInfo", mock.Anything, "test.bak").Return((*FileInfo)(nil), expectedErr)
 	mockLogger.On("Error", mock.Anything, mock.Anything).Return()
 
-	eligible, err := fileUploadEligible(context.Background(), mockUploader, "test.bak", &mockFileInfo{}, mockLogger)
+	eligible, err := fileUploadEligible(context.Background(), mockUploader, "test.bak", &mockFileInfo{}, false, mockLogger)
 	assert.Error(t, err)
 	assert.False(t, eligible)
 	assert.Equal(t, expectedErr, err)
